@@ -258,7 +258,7 @@ input:focus,textarea:focus{border-color:#4ecca3}
 <p style="color:#e94560;margin-bottom:16px;font-size:.9em" data-i18n="reset_warn">此操作将永久删除所有凭证、存储数据和主密码，不可恢复！</p>
 <div style="display:flex;gap:10px;justify-content:flex-end">
 <button class="btn btn-ghost" onclick="closeModal('reset')" data-i18n="btn_cancel">取消</button>
-<button class="btn btn-danger" onclick="doReset()" data-i18n="btn_do_reset">确认重置</button>
+<button class="btn btn-danger" id="btn-do-reset" onclick="doReset()" data-i18n="btn_do_reset">确认重置</button>
 </div>
 </div>
 </div>
@@ -375,6 +375,7 @@ var I18N={
     health_dash_title:"🛡️ 存储健康度与自愈监控",
     btn_refresh:"🔄 刷新监控数据",
     toast_hw_wait:"🛡️ 硬件授权：请在 15 秒内轻按板载 [BOOT] 键…",
+    btn_hw_wait:"🔘 请按 BOOT 键确认…",
     toast_copied:"已复制",
     toast_copy_fail:"复制失败",
     toast_net_err:"网络错误",
@@ -496,6 +497,7 @@ var I18N={
     health_dash_title:"🛡️ Storage Health & Mirror Self-Healing",
     btn_refresh:"🔄 Refresh Metrics",
     toast_hw_wait:"🛡️ Hardware 2FA: Please press onboard [BOOT] button within 15s…",
+    btn_hw_wait:"🔘 Press BOOT button…",
     toast_copied:"Copied to clipboard",
     toast_copy_fail:"Copy failed",
     toast_net_err:"Network error",
@@ -920,7 +922,8 @@ showScr('scr-login');
 
 /* Backup / Restore */
 function doExport(){
-busy('btn-export','正在导出…',true);
+toast(t('toast_hw_wait'),true);
+busy('btn-export',t('btn_hw_wait'),true);
 api('POST','/export',{}).then(function(d){
 busy('btn-export','',false);
 if(d.ok&&d.backup){
@@ -933,8 +936,8 @@ a.download='keyvault-'+new Date().toISOString().slice(0,10)+'.kvbk';
 document.body.appendChild(a);a.click();document.body.removeChild(a);
 setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
 toast('备份已下载',true)
-}else toast(d.error||'导出失败',false)
-}).catch(function(){busy('btn-export','',false);toast('网络错误',false)})
+}else toast(d.error||t('toast_auth_fail'),false)
+}).catch(function(){busy('btn-export','',false);toast(t('toast_auth_fail'),false)})
 }
 
 function doImport(){
@@ -943,7 +946,8 @@ if(!f){toast(t('toast_choose_backup'),false);return}
 if(!pw){toast(t('toast_enter_backup_pw'),false);return}
 var r=new FileReader();
 r.onload=function(e){
-busy('btn-import',t('btn_unlocking'),true);
+toast(t('toast_hw_wait'),true);
+busy('btn-import',t('btn_hw_wait'),true);
 var bytes=new Uint8Array(e.target.result);
 var binary='';
 for(var i=0;i<bytes.byteLength;i++)binary+=String.fromCharCode(bytes[i]);
@@ -954,8 +958,8 @@ if(d.ok){
 toast(t('toast_restored'),true);closeModal('backup');
 $('import-file').value='';$('import-pw').value='';
 doLock()
-}else toast(d.error||'Restore failed',false)
-}).catch(function(){busy('btn-import','',false);toast(t('toast_net_err'),false)})
+}else toast(d.error||t('toast_auth_fail'),false)
+}).catch(function(){busy('btn-import','',false);toast(t('toast_auth_fail'),false)})
 };
 r.onerror=function(){toast('File read error',false)};
 r.readAsArrayBuffer(f)
@@ -967,14 +971,15 @@ var o=$('pw-old').value,n=$('pw-new').value,n2=$('pw-new2').value;
 if(!o){toast(t('toast_name_req'),false);return}
 if(n.length<4){toast(t('toast_pw_len'),false);return}
 if(n!==n2){toast(t('toast_pw_mismatch'),false);return}
-busy('btn-chpw','...',true);
+toast(t('toast_hw_wait'),true);
+busy('btn-chpw',t('btn_hw_wait'),true);
 api('POST','/chpwd',{old:o,'new':n}).then(function(d){
 busy('btn-chpw','',false);
 if(d.ok){
 toast(t('toast_pw_changed'),true);T=d.token||T;closeModal('pwd');
 $('pw-old').value='';$('pw-new').value='';$('pw-new2').value='';loadAll()
-}else toast(d.error||'Failed',false)
-}).catch(function(){busy('btn-chpw','',false);toast(t('toast_net_err'),false)})
+}else toast(d.error||t('toast_auth_fail'),false)
+}).catch(function(){busy('btn-chpw','',false);toast(t('toast_auth_fail'),false)})
 }
 
 function getHealthPct(){
@@ -1300,7 +1305,13 @@ s.style.color='#ffa500';
 /* Reset */
 function openReset(){openModal('reset')}
 function doReset(){
-api('POST','/reset',{}).then(function(d){if(d.ok){toast(t('toast_deleted'),true);closeModal('reset');T='';sessionStorage.removeItem('kv_token');showScr('scr-setup')}else toast(d.error,false)}).catch(function(){toast(t('toast_net_err'),false)})
+toast(t('toast_hw_wait'),true);
+busy('btn-do-reset',t('btn_hw_wait'),true);
+api('POST','/reset',{}).then(function(d){
+busy('btn-do-reset','',false);
+if(d.ok){toast(t('toast_deleted'),true);closeModal('reset');T='';sessionStorage.removeItem('kv_token');showScr('scr-setup')}
+else toast(d.error||t('toast_auth_fail'),false)
+}).catch(function(){busy('btn-do-reset','',false);toast(t('toast_auth_fail'),false)})
 }
 
 /* Visibility Change & Init */

@@ -871,8 +871,16 @@ static esp_err_t handler_lock(httpd_req_t *req)
 /* POST /api/chpwd {old,new} —— 修改主密码（需已解锁，会重新加密全部条目） */
 static esp_err_t handler_change_password(httpd_req_t *req)
 {
+    int64_t req_start_us = esp_timer_get_time();
+
     if (!authorized(req)) {
         return deny(req);
+    }
+
+    /* ── 硬件安全 2FA：物理按键授权确认 ──
+     * 修改主密码属于敏感安全变更，必须经由操作者在物理设备上轻按 [BOOT] 键确认 */
+    if (!wait_for_physical_button(req_start_us, 15000)) {
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"硬件确认超时：请在 15 秒内轻按开发板上的 [BOOT] 键以授权修改主密码\"}");
     }
 
     char body[1024];
@@ -911,8 +919,17 @@ static esp_err_t handler_change_password(httpd_req_t *req)
  * 内容是密文+salt+验证块，不含主密码，离线保存也解不开。 */
 static esp_err_t handler_export(httpd_req_t *req)
 {
+    int64_t req_start_us = esp_timer_get_time();
+
     if (!authorized(req)) {
         return deny(req);
+    }
+
+    /* ── 硬件安全 2FA：物理按键授权确认 ──
+     * 导出全量加密备份必须经由操作者在物理设备上轻按 [BOOT] 键确认，
+     * 杜绝后台恶意脚本静默拖库备份并进行离线爆破。 */
+    if (!wait_for_physical_button(req_start_us, 15000)) {
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"硬件确认超时：请在 15 秒内轻按开发板上的 [BOOT] 键以授权导出备份\"}");
     }
 
     uint8_t *bin = NULL;
@@ -956,8 +973,16 @@ static esp_err_t handler_export(httpd_req_t *req)
 /* POST /api/import {backup,password} —— 用备份整库覆盖（需先校验主密码） */
 static esp_err_t handler_import(httpd_req_t *req)
 {
+    int64_t req_start_us = esp_timer_get_time();
+
     if (!authorized(req)) {
         return deny(req);
+    }
+
+    /* ── 硬件安全 2FA：物理按键授权确认 ──
+     * 恢复/覆盖全库属于高危破坏性操作，必须经由操作者在物理设备上轻按 [BOOT] 键确认 */
+    if (!wait_for_physical_button(req_start_us, 15000)) {
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"硬件确认超时：请在 15 秒内轻按开发板上的 [BOOT] 键以授权恢复备份\"}");
     }
 
     size_t clen = req->content_len;
@@ -1031,15 +1056,23 @@ static esp_err_t handler_import(httpd_req_t *req)
     }
 
     return send_json_resp(req, "{\"ok\":true}");
-    return ESP_OK;
 }
 
 /* POST /api/reset —— 清空全部数据，必须持有有效会话令牌 */
 static esp_err_t handler_reset(httpd_req_t *req)
 {
+    int64_t req_start_us = esp_timer_get_time();
+
     if (!authorized(req)) {
         return deny(req);
     }
+
+    /* ── 硬件安全 2FA：物理按键授权确认 ──
+     * 恢复出厂设置将彻底抹除全部分区数据，必须经由操作者在物理设备上轻按 [BOOT] 键确认 */
+    if (!wait_for_physical_button(req_start_us, 15000)) {
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"硬件确认超时：请在 15 秒内轻按开发板上的 [BOOT] 键以授权重置设备\"}");
+    }
+
     esp_err_t err = vault_reset();
     char resp[64];
     snprintf(resp, sizeof(resp), "{\"ok\":%s}", err == ESP_OK ? "true" : "false");
