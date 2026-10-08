@@ -37,6 +37,7 @@
 
 #include "keyvault.h"
 #include "usb_net.h"
+#include "usb_hid.h"
 #include "wifi_net.h"
 #include "web_content.h"
 #include "json_util.h"
@@ -76,11 +77,18 @@ static void monitor_task(void *arg)
             s_last_boot_press_us = esp_timer_get_time();
             boot_held_ticks++;
 
-            /* 若当前有 Web 登录/设置请求正等待物理按键授权，短按瞬间放行 */
+            /* A. 若当前有 Web 登录/设置/查看请求正等待物理按键授权，短按瞬间放行 */
             if (s_waiting_auth && s_auth_sem != NULL) {
                 s_waiting_auth = false;
                 xSemaphoreGive(s_auth_sem);
                 ESP_LOGI(TAG, ">>> monitor_task: 检测到硬件 BOOT 键按下，物理授权通过！<<<");
+            }
+            /* B. 若系统处于 HID 键盘单次安全输入武装状态，短按瞬间触发物理键入 (仅触发一次) */
+            else if (usb_hid_is_armed() && boot_held_ticks == 1) {
+                ESP_LOGI(TAG, ">>> monitor_task: 检测到 BOOT 键按下，触发安全硬件模拟键入！<<<");
+                gpio_set_level(LED_GPIO, 1);
+                usb_hid_trigger();
+                gpio_set_level(LED_GPIO, 0);
             }
 
             /* 按下 3~10 秒内：LED 快速爆闪，视觉提示用户正在长按计时 (20ms * 150 = 3000ms) */
@@ -106,6 +114,15 @@ static void monitor_task(void *arg)
 
         /* 2. 若正在等待用户按键授权确认：由 wait_for_physical_button 接管 LED 闪烁 */
         if (s_waiting_auth) {
+            continue;
+        }
+
+        /* 3. 若处于 HID 安全输入武装待命状态：LED 快速双闪警示 (100ms 翻转一次) */
+        if (usb_hid_is_armed()) {
+            if (loop_count % 5 == 0) {
+                led_on = !led_on;
+                gpio_set_level(LED_GPIO, led_on ? 1 : 0);
+            }
             continue;
         }
 
@@ -638,8 +655,17 @@ static esp_err_t handler_list_creds(httpd_req_t *req)
 /* GET /api/cred/<idx> — 获取单条凭证（含密码） */
 static esp_err_t handler_get_cred(httpd_req_t *req)
 {
+    int64_t req_start_us = esp_timer_get_time();
+
     if (!authorized(req)) {
         return deny(req);
+    }
+
+    /* ── 硬件安全 2FA：物理按键授权确认 ──
+     * 查看/复制密码明文必须经由操作者在物理设备上轻按 [BOOT] 键确认，
+     * 杜绝后台木马脚本静默爬取凭证库。 */
+    if (!wait_for_physical_button(req_start_us, 15000)) {
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"硬件确认超时：请在 15 秒内轻按开发板上的 [BOOT] 键以授权查看\"}");
     }
 
     /* 从 URI 提取 index: /api/cred/0, /api/cred/1, ... */
@@ -1089,8 +1115,16 @@ static esp_err_t handler_kv_list(httpd_req_t *req)
 /* GET /api/kv/<key> — 获取值 */
 static esp_err_t handler_kv_get(httpd_req_t *req)
 {
+    int64_t req_start_us = esp_timer_get_time();
+
     if (!authorized(req)) {
         return deny(req);
+    }
+
+    /* ── 硬件安全 2FA：物理按键授权确认 ──
+     * 获取敏感存储值必须经由操作者在物理设备上轻按 [BOOT] 键确认 */
+    if (!wait_for_physical_button(req_start_us, 15000)) {
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"硬件确认超时：请在 15 秒内轻按开发板上的 [BOOT] 键以授权查看\"}");
     }
 
     /* 从 URI 提取 key: /api/kv/xxx */
@@ -1179,12 +1213,114 @@ static esp_err_t handler_kv_delete(httpd_req_t *req)
     return send_json_resp(req, resp);
 }
 
+/* POST /api/hid/arm {type:"cred"|"kv", id:0, key:"xxx"} — 武装单次安全键入 */
+static esp_err_t handler_hid_arm(httpd_req_t *req)
+{
+    if (!authorized(req)) {
+        return deny(req);
+    }
+
+    char body[512];
+    if (read_body(req, body, sizeof(body)) == 0) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "empty body");
+        return ESP_FAIL;
+    }
+
+    char type[16];
+    if (!json_get_str_field(body, "type", type, sizeof(type))) {
+        vault_secure_zero(body, sizeof(body));
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"missing type\"}");
+    }
+
+    char secret[VAULT_MAX_KV_VAL_LEN];
+    char label[VAULT_MAX_NAME_LEN];
+    secret[0] = '\0';
+    label[0] = '\0';
+
+    if (strcmp(type, "cred") == 0) {
+        int idx = -1;
+        json_get_int_field(body, "id", &idx);
+        if (idx < 0) {
+            vault_secure_zero(body, sizeof(body));
+            return send_json_resp(req, "{\"ok\":false,\"error\":\"missing id\"}");
+        }
+        vault_cred_t cred;
+        esp_err_t err = vault_get_cred(idx, &cred);
+        if (err != ESP_OK) {
+            vault_secure_zero(body, sizeof(body));
+            return send_json_resp(req, "{\"ok\":false,\"error\":\"not found\"}");
+        }
+        strncpy(secret, cred.password, sizeof(secret) - 1);
+        strncpy(label, cred.name, sizeof(label) - 1);
+        vault_secure_zero(&cred, sizeof(cred));
+    } else if (strcmp(type, "kv") == 0) {
+        char key[VAULT_MAX_KV_KEY_LEN];
+        if (!json_get_str_field(body, "key", key, sizeof(key))) {
+            vault_secure_zero(body, sizeof(body));
+            return send_json_resp(req, "{\"ok\":false,\"error\":\"missing key\"}");
+        }
+        esp_err_t err = vault_kv_get(key, secret, sizeof(secret));
+        if (err != ESP_OK) {
+            vault_secure_zero(body, sizeof(body));
+            return send_json_resp(req, "{\"ok\":false,\"error\":\"not found\"}");
+        }
+        strncpy(label, key, sizeof(label) - 1);
+    } else {
+        vault_secure_zero(body, sizeof(body));
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"invalid type\"}");
+    }
+
+    vault_secure_zero(body, sizeof(body));
+
+    esp_err_t arm_err = usb_hid_arm(secret, label, 30);
+    vault_secure_zero(secret, sizeof(secret));
+
+    if (arm_err != ESP_OK) {
+        return send_json_resp(req, "{\"ok\":false,\"error\":\"武装失败\"}");
+    }
+
+    char esc_label[VAULT_MAX_NAME_LEN * 2 + 1];
+    json_escape_str(esc_label, sizeof(esc_label), label);
+    char resp[256];
+    snprintf(resp, sizeof(resp), "{\"ok\":true,\"timeout\":30,\"label\":\"%s\"}", esc_label);
+    return send_json_resp(req, resp);
+}
+
+/* POST /api/hid/disarm — 解除安全键入武装 */
+static esp_err_t handler_hid_disarm(httpd_req_t *req)
+{
+    if (!authorized(req)) {
+        return deny(req);
+    }
+    usb_hid_disarm();
+    return send_json_resp(req, "{\"ok\":true}");
+}
+
+/* GET /api/hid/status — 查询武装状态 */
+static esp_err_t handler_hid_status(httpd_req_t *req)
+{
+    if (!authorized(req)) {
+        return deny(req);
+    }
+    char label[VAULT_MAX_NAME_LEN];
+    int remaining = 0;
+    bool armed = usb_hid_get_arm_info(label, sizeof(label), &remaining);
+    if (!armed) {
+        return send_json_resp(req, "{\"ok\":true,\"armed\":false}");
+    }
+    char esc_label[VAULT_MAX_NAME_LEN * 2 + 1];
+    json_escape_str(esc_label, sizeof(esc_label), label);
+    char resp[256];
+    snprintf(resp, sizeof(resp), "{\"ok\":true,\"armed\":true,\"remaining\":%d,\"label\":\"%s\"}", remaining, esc_label);
+    return send_json_resp(req, resp);
+}
+
 /* ── HTTP 服务器 ── */
 static void start_http_server(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
-    config.max_uri_handlers = 32;    /* 注册 23 个，余量充裕 */
+    config.max_uri_handlers = 32;    /* 注册 26 个，余量充裕 */
     config.stack_size = 12288;  /* 增加至 12KB 堆栈，为大并发/深调用链提供充裕余量 */
 
     if (httpd_start(&s_server, &config) != ESP_OK) {
@@ -1211,6 +1347,9 @@ static void start_http_server(void)
         { .uri = "/api/kv",           .method = HTTP_POST, .handler = handler_kv_set },
         { .uri = "/api/kv/*",         .method = HTTP_GET,  .handler = handler_kv_get },
         { .uri = "/api/kv/delete",    .method = HTTP_POST, .handler = handler_kv_delete },
+        { .uri = "/api/hid/arm",      .method = HTTP_POST, .handler = handler_hid_arm },
+        { .uri = "/api/hid/disarm",   .method = HTTP_POST, .handler = handler_hid_disarm },
+        { .uri = "/api/hid/status",   .method = HTTP_GET,  .handler = handler_hid_status },
         { .uri = "/api/usb",          .method = HTTP_GET,  .handler = handler_usb },
         { .uri = "/api/reboot",       .method = HTTP_POST, .handler = handler_reboot },
         { .uri = "/api/chpwd",        .method = HTTP_POST, .handler = handler_change_password },
@@ -1242,8 +1381,9 @@ void app_main(void)
     }
     ESP_ERROR_CHECK(nvs_ret);
 
-    /* 初始化 Vault（加密存储，双 NVS 分区冗余） */
+    /* 初始化 Vault（加密存储，双 NVS 分区冗余）与 USB HID */
     ESP_ERROR_CHECK(vault_init());
+    ESP_ERROR_CHECK(usb_hid_init());
     ESP_ERROR_CHECK(e2ee_init());
 
     /* 配置 LED 与 BOOT 按键引脚 */

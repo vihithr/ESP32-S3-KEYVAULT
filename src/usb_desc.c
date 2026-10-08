@@ -1,19 +1,21 @@
 /*
- * usb_desc.c —— USB 原生 RNDIS 单网卡描述符
+ * usb_desc.c —— USB 原生 RNDIS + HID 复合设备描述符
  *
- * 仅暴露单一 RNDIS 网络设备（接口 0 & 1），采用 Windows 10/11 原生驱动匹配的
- * Class 0xEF / SubClass 0x04 / Protocol 0x01（与 rndiscmp.inf 完美匹配）。
- * 彻底消除 CDC-NCM 冗余接口，确保主机网络适配器中永久只出现 1 个网卡。
+ * 暴露 RNDIS 网络设备（接口 0 & 1）与 HID 键盘设备（接口 2）。
+ * 采用 Windows 10/11 原生驱动匹配的 Class 0xEF / SubClass 0x04 / Protocol 0x01，
+ * 同时保留 EP3-IN 用于免驱 USB 键盘物理击键输入。
  */
 #include "usb_desc.h"
 
 #include <stdio.h>
 #include <string.h>
+#include "class/hid/hid_device.h"
 
 /* ── 接口编号 ── */
 enum {
     ITF_NUM_RNDIS = 0,
     ITF_NUM_RNDIS_DATA,
+    ITF_NUM_HID,
     ITF_NUM_TOTAL
 };
 
@@ -22,6 +24,7 @@ enum {
     EPNUM_RNDIS_NOTIF = 0x81,
     EPNUM_RNDIS_OUT   = 0x02,
     EPNUM_RNDIS_IN    = 0x82,
+    EPNUM_HID         = 0x83,
 };
 
 /* ── 字符串索引 ── */
@@ -31,6 +34,7 @@ enum {
     STRID_PRODUCT,
     STRID_SERIAL,
     STRID_RNDIS_INTERFACE,    /* 4 */
+    STRID_HID_INTERFACE,      /* 5 */
     STRID_COUNT
 };
 
@@ -61,7 +65,7 @@ enum {
   7, TUSB_DESC_ENDPOINT, _epout, TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0
 
 enum {
-    USB_CFG_DESC_LEN = TUD_CONFIG_DESC_LEN + KEYVAULT_RNDIS_DESC_LEN
+    USB_CFG_DESC_LEN = TUD_CONFIG_DESC_LEN + KEYVAULT_RNDIS_DESC_LEN + TUD_HID_DESC_LEN
 };
 
 static const char s_langid[2] = {0x09, 0x04};
@@ -73,13 +77,14 @@ const char *usb_str_desc[STRID_COUNT] = {
     "KeyVault USB Device",         /* 2: 产品 */
     "0001",                        /* 3: 序列号 */
     "KeyVault RNDIS Network",      /* 4: 单一 RNDIS 网络接口 */
+    "KeyVault HID Keyboard",       /* 5: 安全免驱键盘输入接口 */
 };
 
 const tusb_desc_device_t usb_dev_desc = {
     .bLength            = sizeof(tusb_desc_device_t),
     .bDescriptorType    = TUSB_DESC_DEVICE,
     .bcdUSB             = 0x0200,
-    /* 复合设备（含 IAD）：必须声明为 MISC/Common/IAD */
+    /* 复合设备（含 IAD）：声明为 MISC/Common/IAD */
     .bDeviceClass       = TUSB_CLASS_MISC,
     .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
     .bDeviceProtocol    = MISC_PROTOCOL_IAD,
@@ -93,17 +98,52 @@ const tusb_desc_device_t usb_dev_desc = {
     .bNumConfigurations = 0x01
 };
 
+/* 键盘 HID 报表描述符 */
+const uint8_t hid_report_desc[] = {
+    TUD_HID_REPORT_DESC_KEYBOARD()
+};
+
 uint8_t const usb_fs_cfg_desc[USB_CFG_DESC_LEN] = {
-    /* 配置号、接口总数(2)、字符串索引、总长度、属性、最大电流(100mA) */
+    /* 配置号、接口总数(3)、字符串索引、总长度、属性、最大电流(100mA) */
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, USB_CFG_DESC_LEN, TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
 
-    /* 唯一的网络接口：RNDIS（Windows 10/11 原生驱动极速免驱匹配） */
+    /* 接口 0 & 1：RNDIS 网卡（Windows 10/11 原生驱动免驱） */
     KEYVAULT_RNDIS_DESCRIPTOR(ITF_NUM_RNDIS, STRID_RNDIS_INTERFACE,
                               EPNUM_RNDIS_NOTIF, 8,
                               EPNUM_RNDIS_OUT, EPNUM_RNDIS_IN, 64),
+
+    /* 接口 2：HID 键盘（EP3-IN 中断传输，用于物理硬件键入） */
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, STRID_HID_INTERFACE, HID_ITF_PROTOCOL_KEYBOARD,
+                       sizeof(hid_report_desc), EPNUM_HID, 8, 10),
 };
 
 void usb_desc_set_rndis_mac(const uint8_t mac[6])
 {
     (void)mac;
+}
+
+/* ── TinyUSB HID 回调实现 ── */
+uint8_t const * tud_hid_descriptor_report_cb(uint8_t instance)
+{
+    (void)instance;
+    return hid_report_desc;
+}
+
+uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)reqlen;
+    return 0;
+}
+
+void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)bufsize;
 }

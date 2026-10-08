@@ -30,10 +30,17 @@ With just a single Type-C cable plugged into any PC, Mac, Linux, or mobile phone
 - **Pure Native JS Cryptographic Engine**: Built-in pure JavaScript implementation of **RFC 7748 X25519 (ECDH)**, **SHA-256**, and **AES-256-GCM (with full GHASH authentication)** using modern `BigInt`. Operates independently of restricted `window.crypto.subtle` contexts, running out of the box on all browsers.
 - **Ephemeral Key Exchange (PFS)**: On every session initiation, both client and ESP32-S3 generate ephemeral X25519 keypairs to derive a transient 256-bit session key. All request payloads and responses are encrypted and authenticated via on-chip hardware AES-256-GCM. Packet sniffers capture only high-entropy ciphertexts.
 
-### 5. 🔌 Pure Single RNDIS Virtual NIC & Zero Radio Frequency (RF) Exposure
-- **Single RNDIS Driver Mode**: Eliminates routing conflicts caused by multi-interface network cards. Plug-and-play host configuration assigns `192.168.7.2` via the onboard DHCP server.
-- **Zero RF by Default**: Wi-Fi and Bluetooth radios are completely powered down by default, producing zero wireless electromagnetic footprint.
-- **Physical Button 2FA Authorization**: Critical operations (initial setup, login/unlock) require pressing the physical **BOOT** button on the ESP32-S3 board, thwarting remote brute-force and injection attacks.
+### 5. ⌨️ USB HID Driver-Free Safe Typing (Auto-Type / Anti-Clipboard Hijacking)
+- **Composite RNDIS + HID Architecture**: Extends the native network interface by allocating interrupt endpoint `EP3-IN` for standard USB HID keyboard emulation without requiring any host drivers.
+- **Single-Shot Arming State Machine**: Clicking the 【⌨️】 button arms the device for 30 seconds, temporarily loading the decrypted password into volatile RAM with a visible countdown timer.
+- **Physical Key Injection Direct to Target Focus**: Place your cursor into any target input field (lock screens, sudo/SSH terminal, or web login forms) and press the onboard **[BOOT]** button. KeyVault simulates physical keyboard keystrokes to type the password character by character.
+- **Strictly No Enter Key Emitted**: Keystrokes terminate precisely at the end of the password, preventing unintended form submission.
+- **Physical Memory Zeroing & Replay Prevention**: Once keystrokes are emitted, authorization is immediately revoked and the temporary RAM buffer is wiped with `vault_secure_zero`. **Keystrokes bypass the operating system clipboard entirely**, completely neutralizing clipboard-monitoring malware.
+
+### 6. 🛡️ Physical 2FA Button Confirmation & Zero-RF Architecture
+- **Hardware 2FA on Plaintext Password Viewing/Copying**: Viewing or copying credentials requires pressing the onboard **[BOOT]** button within 15 seconds. Requests time out without physical interaction, preventing background botnets or host malware from silently dumping your vault.
+- **Zero RF by Default**: Wi-Fi and Bluetooth radios remain disabled by default, eliminating electromagnetic wireless attack vectors.
+- **Zero Master Password Retention**: Flash stores only cryptographic salts and PBKDF2 verifiers. All derivations occur in volatile RAM and are physically wiped upon verification or power loss.
 
 ---
 

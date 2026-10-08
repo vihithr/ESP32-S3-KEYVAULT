@@ -3,7 +3,7 @@
 # 固件不依赖 esp_wifi / bt，USB 设备栈通过 idf_component.yml 引入 espressif/esp_tinyusb
 
 idf_component_register(
-    SRCS "main.c" "keyvault.c" "usb_net.c" "usb_desc.c" "rndis.c" "web_content.c" "json_util.c" "wifi_net.c" "e2ee.c"
+    SRCS "main.c" "keyvault.c" "usb_net.c" "usb_desc.c" "rndis.c" "usb_hid.c" "web_content.c" "json_util.c" "wifi_net.c" "e2ee.c"
     INCLUDE_DIRS "."
     PRIV_REQUIRES
         driver
