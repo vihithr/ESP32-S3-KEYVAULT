@@ -16,6 +16,12 @@ diag.ps1
 _archive/
 # Flashtool artifacts
 flashtool/*.zip
+flashtool/*.exe
+flashtool/*.spec
+flashtool/build/
+flashtool/dist/
 flashtool/__pycache__/
+flashtool/.venv*/
 flashtool/release_notes*.md
+.venv/
 *.bak

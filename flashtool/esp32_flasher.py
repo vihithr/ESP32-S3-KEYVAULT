@@ -90,12 +90,21 @@ class ESP32Flasher:
         """
         查找固件文件并返回 {烧录地址: 绝对路径} 字典
         """
+        meipass = getattr(sys, '_MEIPASS', None)
+        exe_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else None
+
         candidates = [
             os.path.join(self.flashtool_dir, self.firmware_dir),
             os.path.join(self.project_path, self.firmware_dir),
             os.path.join(self.project_path, ".pio", "build-usb4", "esp32-s3-devkitm-1"),
             os.path.join(self.project_path, ".pio", "build", "esp32-s3-devkitm-1"),
         ]
+        if exe_dir:
+            candidates.insert(0, os.path.join(exe_dir, self.firmware_dir))
+            candidates.insert(1, exe_dir)
+        if meipass:
+            candidates.insert(0, os.path.join(meipass, self.firmware_dir))
+            candidates.insert(1, meipass)
 
         found_layout: Dict[str, str] = {}
 
@@ -197,6 +206,14 @@ class ESP32Flasher:
     # ============================================================
     # esptool 检测与安装
     # ============================================================
+
+    def _esptool_callable(self) -> bool:
+        """检查当前环境是否可直接 import esptool（免子进程，支持单文件 EXE）"""
+        try:
+            import esptool
+            return True
+        except ImportError:
+            return False
 
     def get_esptool_command(self) -> Optional[List[str]]:
         """检测可用的 esptool 命令（智能支持 Conda、venv、PlatformIO 环境）"""
@@ -300,6 +317,109 @@ class ESP32Flasher:
     # 烧录功能
     # ============================================================
 
+    def _run_esptool(self, argv: List[str], operation: str = "烧录") -> tuple[bool, Optional[str]]:
+        """
+        统一执行 esptool 参数列表：
+        - 优先尝试在当前进程内直接调用 esptool.main(argv)，免子进程、免弹窗、完美支持 PyInstaller 单文件 EXE！
+        - 若无法直接导入，则通过 subprocess 运行外部检测到的 esptool
+        """
+        # 1. 尝试直接在进程内运行（针对 PyInstaller 打包环境或已安装 esptool 的环境）
+        try:
+            import esptool
+            import io
+            import contextlib
+
+            class LogRedirector(io.TextIOBase):
+                def __init__(self, log_cb, cancel_event):
+                    self.log_cb = log_cb
+                    self.cancel_event = cancel_event
+                    self.buf = ""
+
+                def write(self, s):
+                    self.buf += s
+                    while "\n" in self.buf:
+                        line, self.buf = self.buf.split("\n", 1)
+                        clean = line.strip()
+                        if clean:
+                            self._parse_line(clean)
+                    return len(s)
+
+                def _parse_line(self, line):
+                    if "Writing at" in line or "Hash of data verified" in line:
+                        self.log_cb("OK", line)
+                    elif "Connecting" in line:
+                        self.log_cb("WARN", line)
+                    elif "A fatal error occurred" in line or "Error" in line:
+                        self.log_cb("ERROR", line)
+                    else:
+                        self.log_cb("INFO", line)
+
+                def flush(self):
+                    if self.buf.strip():
+                        self._parse_line(self.buf.strip())
+                        self.buf = ""
+
+            redirector = LogRedirector(self._log, self._cancel_event)
+            rc = 0
+            self._log("INFO", f"启动内置烧录引擎: esptool {' '.join(argv)}")
+            try:
+                with contextlib.redirect_stdout(redirector), contextlib.redirect_stderr(redirector):
+                    rc = esptool.main(argv)
+            except SystemExit as e:
+                rc = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+            except Exception as e:
+                self._log("ERROR", f"执行异常: {e}")
+                return False, str(e)
+
+            redirector.flush()
+            success = (rc == 0)
+            return success, None if success else f"退出码: {rc}"
+        except ImportError:
+            pass
+
+        # 2. 回退到子进程执行
+        esptool_cmd = self.get_esptool_command()
+        if not esptool_cmd:
+            return False, "未检测到可用的 esptool 工具！"
+
+        full_cmd = list(esptool_cmd) + argv
+        self._log("INFO", f"启动外部烧录工具: {' '.join(full_cmd)}")
+        err_msg = None
+        try:
+            proc = subprocess.Popen(
+                full_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
+            while True:
+                if self._cancel_event.is_set():
+                    proc.terminate()
+                    err_msg = "用户取消操作"
+                    break
+                line = proc.stdout.readline()
+                if not line and proc.poll() is not None:
+                    break
+                if line:
+                    clean = line.strip()
+                    if clean:
+                        if "Writing at" in clean or "Hash of data verified" in clean:
+                            self._log("OK", clean)
+                        elif "Connecting" in clean:
+                            self._log("WARN", clean)
+                        elif "Error" in clean or "A fatal error occurred" in clean:
+                            self._log("ERROR", clean)
+                            err_msg = clean
+                        else:
+                            self._log("INFO", clean)
+            proc.wait()
+            success = (proc.returncode == 0)
+            return success, err_msg if not success else None
+        except Exception as e:
+            return False, str(e)
+
     def flash(
         self,
         port: str,
@@ -308,25 +428,16 @@ class ESP32Flasher:
         background: bool = True,
         on_done: Optional[Callable[[bool, Optional[str]], None]] = None,
     ) -> bool:
-        """
-        开始烧录固件
-        """
+        """开始烧录固件"""
         fw = self.find_firmware()
         if not fw:
             raise ESP32FlasherError("未找到完整固件文件！请确认 firmware 目录下包含 bootloader.bin, partitions.bin, firmware.bin")
-
-        esptool_cmd = self.get_esptool_command()
-        if not esptool_cmd:
-            raise ESP32FlasherError("未检测到 esptool 工具！请先点击【安装 esptool】或在终端运行 pip install esptool")
-
         if not port:
             raise ESP32FlasherError("请选择目标串口号！")
 
         target_chip = chip or self.DEFAULT_CHIP
 
-        # 构建命令行
-        cmd = list(esptool_cmd)
-        cmd.extend([
+        argv = [
             "--chip", target_chip,
             "--port", port,
             "--baud", str(baud),
@@ -336,65 +447,21 @@ class ESP32Flasher:
             "--flash_mode", self.DEFAULT_FLASH_MODE,
             "--flash_size", self.DEFAULT_FLASH_SIZE,
             "--flash_freq", self.DEFAULT_FLASH_FREQ,
-        ])
+        ]
 
-        # 按地址顺序追加文件
         sorted_addrs = sorted(fw.keys(), key=lambda a: int(a, 16))
         for addr in sorted_addrs:
-            cmd.extend([addr, fw[addr]])
+            argv.extend([addr, fw[addr]])
 
         def _worker():
             self._cancel_event.clear()
-            self._log("INFO", f"开始烧录到 {port}，芯片: {target_chip.upper()}，波特率: {baud}...")
+            self._log("INFO", f"开始烧录至 {port}，芯片: {target_chip.upper()}，波特率: {baud}...")
             self._log("INFO", "若连接卡顿，请按住开发板 BOOT 键，轻按一下 RST 键进入下载模式。")
-            success = False
-            err_msg = None
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                )
-
-                while True:
-                    if self._cancel_event.is_set():
-                        proc.terminate()
-                        err_msg = "用户取消烧录"
-                        break
-
-                    line = proc.stdout.readline()
-                    if not line and proc.poll() is not None:
-                        break
-
-                    if line:
-                        clean_line = line.strip()
-                        if clean_line:
-                            if "Writing at" in clean_line or "Hash of data verified" in clean_line:
-                                self._log("OK", clean_line)
-                            elif "Connecting" in clean_line:
-                                self._log("WARN", clean_line)
-                            elif "A fatal error occurred" in clean_line or "Error" in clean_line:
-                                self._log("ERROR", clean_line)
-                                err_msg = clean_line
-                            else:
-                                self._log("INFO", clean_line)
-
-                proc.wait()
-                if proc.returncode == 0:
-                    success = True
-                    self._log("OK", "🎉 固件烧录成功！ESP32-S3 设备已自动复位启动。")
-                else:
-                    if not err_msg:
-                        err_msg = f"烧录失败，进程退出码: {proc.returncode}"
-                    self._log("ERROR", err_msg)
-
-            except Exception as e:
-                err_msg = str(e)
-                self._log("ERROR", f"执行异常: {err_msg}")
-
+            success, err_msg = self._run_esptool(argv, "烧录")
+            if success:
+                self._log("OK", "🎉 固件烧录成功！ESP32-S3 设备已自动复位启动。")
+            else:
+                self._log("ERROR", f"烧录失败: {err_msg or '未知错误'}")
             if on_done:
                 on_done(success, err_msg)
 
@@ -405,10 +472,6 @@ class ESP32Flasher:
         else:
             _worker()
             return True
-
-    # ============================================================
-    # 全片擦除
-    # ============================================================
 
     def erase_flash(
         self,
@@ -419,60 +482,25 @@ class ESP32Flasher:
         on_done: Optional[Callable[[bool, Optional[str]], None]] = None,
     ) -> bool:
         """全片擦除 Flash"""
-        esptool_cmd = self.get_esptool_command()
-        if not esptool_cmd:
-            raise ESP32FlasherError("未检测到 esptool 工具！")
         if not port:
             raise ESP32FlasherError("请选择目标串口号！")
 
         target_chip = chip or self.DEFAULT_CHIP
-        cmd = list(esptool_cmd)
-        cmd.extend([
+        argv = [
             "--chip", target_chip,
             "--port", port,
             "--baud", str(baud),
             "erase_flash",
-        ])
+        ]
 
         def _worker():
             self._cancel_event.clear()
-            self._log("WARN", f"正在擦除 {port} 的整块 Flash 闪存（请耐心等待数十秒）...")
-            success = False
-            err_msg = None
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                )
-
-                while True:
-                    if self._cancel_event.is_set():
-                        proc.terminate()
-                        err_msg = "用户取消擦除"
-                        break
-                    line = proc.stdout.readline()
-                    if not line and proc.poll() is not None:
-                        break
-                    if line:
-                        clean_line = line.strip()
-                        if clean_line:
-                            self._log("INFO", clean_line)
-
-                proc.wait()
-                if proc.returncode == 0:
-                    success = True
-                    self._log("OK", "✅ Flash 闪存擦除成功！所有数据已彻底清除。")
-                else:
-                    err_msg = f"擦除失败，退出码: {proc.returncode}"
-                    self._log("ERROR", err_msg)
-            except Exception as e:
-                err_msg = str(e)
-                self._log("ERROR", f"执行异常: {err_msg}")
-
+            self._log("WARN", f"正在擦除 {port} 的整块 Flash 闪存（请耐心等待）...")
+            success, err_msg = self._run_esptool(argv, "擦除")
+            if success:
+                self._log("OK", "✅ Flash 闪存擦除成功！所有数据已彻底清除。")
+            else:
+                self._log("ERROR", f"擦除失败: {err_msg or '未知错误'}")
             if on_done:
                 on_done(success, err_msg)
 
@@ -483,3 +511,4 @@ class ESP32Flasher:
         else:
             _worker()
             return True
+

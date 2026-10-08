@@ -96,10 +96,10 @@ ESP32-S3 的 USB-Serial/JTAG 与 USB-OTG 共用物理引脚（`GPIO19: D-`, `GPI
 
 ## 🚀 快速开始与固件烧录
 
-### 方式一：下载 Release 预编译包烧录（推荐）
-在 GitHub Releases 下载预编译发布包 `ESP32-S3-KEYVAULT-vX.X.X-release.zip` 并解压：
-- **🖥️ 图形化烧录工具（推荐）**：双击运行 `flash_gui.bat`，可自动检测系统 Python/Conda/venv 环境、自动扫描 ESP32-S3 串口，提供一键烧录、全片擦除与串口日志监视器。
-- **⌨️ 命令行极简烧录**：双击运行 `flash.bat`，输入串口号（如 COM3）即可一键刷入。
+### 方式一：下载 Release 预编译包烧录（小白最推荐）
+在 [GitHub Releases](https://github.com/vihithr/ESP32-S3-KEYVAULT/releases) 下载：
+- **⚡ 单文件免安装烧录器（零门槛首选）**：直接下载 `KEYVAULT-Flasher.exe`。**无需安装 Python、无需配置 Conda/venv 环境，内置 esptool 内核与全部固件**，在 Windows 上双击即可直接烧录、擦除或监视串口！
+- **🖥️ 绿色脚本运行包**：下载 `ESP32-S3-KEYVAULT-vX.X.X-release.zip` 并解压，双击 `flash_gui.bat`（智能自适应本地环境）或 `flash.bat`。
 
 ### 方式二：源码编译构建 (PlatformIO)
 ```powershell
@@ -181,8 +181,10 @@ KEYVAULT-ESP32/
 ├── README.md                 # 中文技术说明
 ├── README_EN.md              # 英文技术说明
 ├── flashtool/                # 预编译固件与图形化烧录工具包
-│   ├── esp32_flash_gui.py    # GUI 烧录器 (串口检测 / 烧录 / 擦除 / 监视器)
-│   ├── esp32_flasher.py      # 烧录底层引擎 (支持 Conda / venv / 系统 Python)
+│   ├── KEYVAULT-Flasher.exe  # 独立单文件 Windows 免安装 GUI 烧录器 (内嵌完整固件)
+│   ├── build_exe.py          # PyInstaller 自动化单文件 EXE 打包脚本
+│   ├── esp32_flash_gui.py    # GUI 烧录器源码 (串口检测 / 烧录 / 擦除 / 监视器)
+│   ├── esp32_flasher.py      # 烧录底层引擎 (支持进程内安全流式调用)
 │   ├── flash_gui.bat         # 双击启动图形界面 (智能环境自适应)
 │   ├── flash.bat             # 命令行极简烧录批处理
 │   ├── create_package.py     # 自动化编译、同步与发布包打包脚本
