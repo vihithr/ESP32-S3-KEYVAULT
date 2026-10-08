@@ -15,4 +15,5 @@ diag.ps1
 # Archives & Backups
 Boring/
 _archive/
+flashtool/
 *.bak

@@ -1,5 +1,7 @@
 # 🔐 KeyVault USB —— ESP32-S3 离线硬件级高密密钥管理设备
 
+[English](README_EN.md) | [中文](README.md)
+
 KeyVault 是一款基于 ESP32-S3 原生 USB-OTG 打造的**完全离线、高冗余、高安全密码与密钥保险箱**。
 设备仅需单根 Type-C 数据线插入 PC、Mac 或手机，即可自动建立点对点高速虚拟网络，通过现代 Web 界面管理账户凭证、SSH 密钥、API Token、加密笔记等机密资产。
 
@@ -121,6 +123,8 @@ ESP32-S3-KEYVAULT/
 ├── platformio.ini            # PlatformIO 构建配置
 ├── flash.ps1                 # 一键智能烧录与调试脚本
 ├── LICENSE                   # MIT 开源协议
+├── README.md                 # 中文技术文档
+├── README_EN.md              # 英文技术文档 (English Docs)
 ├── tools/
 │   └── gen_web_content.py    # 网页单次无损 C 转义生成工具
 └── src/
