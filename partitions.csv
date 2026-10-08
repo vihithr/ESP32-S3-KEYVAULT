@@ -1,0 +1,10 @@
+# KeyVault USB Partition Table (4MB Flash, no Wi-Fi/BT -> no phy_init)
+# Name,     Type, SubType,  Offset,   Size,     Flags
+#
+# vault / vault2: 512KB each (supports 1536 entries with 2-tier compression)
+# factory starts on a 0x10000 boundary (0x110000)
+# NOTE: keep this file ASCII only -- PlatformIO GBK build requirement.
+nvs,        data, nvs,      0x9000,   0x4000,
+vault,      data, nvs,      0xD000,   0x80000,
+vault2,     data, nvs,      0x8D000,  0x80000,
+factory,    app,  factory,  0x110000, 0x1D0000,

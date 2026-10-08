@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+## 说明：PlatformIO 的 espidf 构建会把 src/ 作为 EXTRA_COMPONENT_DIRS 组件，
+## 因此这里的依赖声明会被 IDF 组件管理器识别，构建时自动拉取到 managed_components/
+dependencies:
+  espressif/esp_tinyusb:
+    version: "^2.3.0"

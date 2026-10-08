@@ -1,0 +1,18 @@
+# PlatformIO & Build Artifacts
+.pio/
+build/
+managed_components/
+
+# Logs & Diagnostics
+*.log
+*.err
+diag.ps1
+
+# IDE & Editor Settings
+.vscode/
+.codebuddy/
+
+# Archives & Backups
+Boring/
+_archive/
+*.bak

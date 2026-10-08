@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KeyVault</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;background:#0f1117;color:#e0e0e0;font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif}
+.c{max-width:520px;margin:0 auto;padding:20px}
+h1{text-align:center;font-size:1.4em;margin-bottom:6px;color:#4ecca3}
+.sub{text-align:center;font-size:.8em;color:#666;margin-bottom:24px}
+input[type=password],input[type=text],textarea{width:100%;padding:12px 14px;border:1px solid #2a2d3a;border-radius:10px;background:#1a1d28;color:#e0e0e0;font-size:.95em;outline:none;transition:border .2s;font-family:inherit}
+textarea{resize:vertical;min-height:60px}
+input:focus,textarea:focus{border-color:#4ecca3}
+.btn{display:inline-block;border:0;border-radius:10px;padding:12px 24px;font-size:.95em;cursor:pointer;transition:transform .1s,opacity .2s;color:#fff}
+.btn:active{transform:scale(.96)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn-primary{background:#4ecca3;color:#0f1117}
+.btn-danger{background:#e94560}
+.btn-ghost{background:transparent;border:1px solid #2a2d3a;color:#888}
+.btn-sm{padding:8px 14px;font-size:.82em}
+.btn-block{width:100%;text-align:center}
+.card{background:#1a1d28;border-radius:14px;padding:20px;margin-bottom:14px;border:1px solid #2a2d3a}
+.search-bar{position:relative;margin-bottom:16px}
+.search-bar input{padding-left:36px}
+.search-bar::before{content:"🔍";position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:.9em}
+.item{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;background:#151821;margin-bottom:8px;border:1px solid #2a2d3a;transition:border .2s}
+.item:hover{border-color:#4ecca3}
+.item-info{flex:1;min-width:0}
+.item-name{font-weight:600;font-size:.95em;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-sub{font-size:.78em;color:#666;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-actions{display:flex;gap:6px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-overlay.show{display:flex}
+.modal{background:#1a1d28;border-radius:14px;padding:24px;width:92%;max-width:460px;border:1px solid #2a2d3a;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:1.1em;margin-bottom:16px;color:#4ecca3}
+.fg{margin-bottom:14px}
+.fg label{display:block;font-size:.82em;color:#888;margin-bottom:4px}
+.fg .row{display:flex;gap:8px}
+.fg .row input{flex:1}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:10px;font-size:.85em;z-index:200;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast-ok{background:#4ecca3;color:#0f1117}
+.toast-err{background:#e94560;color:#fff}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.topbar .left{font-size:.85em;color:#888}
+.tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid #2a2d3a}
+.tab{flex:1;text-align:center;padding:10px 0;font-size:.9em;cursor:pointer;color:#666;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab.on{color:#4ecca3;border-bottom-color:#4ecca3}
+.pw-gen-opts{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
+.pw-gen-opts label{font-size:.82em;color:#888;display:flex;align-items:center;gap:4px;cursor:pointer}
+.pw-gen-opts input[type=checkbox]{accent-color:#4ecca3}
+.generated-pw{font-family:monospace;font-size:1em;padding:10px;border-radius:8px;background:#0f1117;color:#4ecca3;word-break:break-all;margin:8px 0;min-height:38px}
+.empty{text-align:center;padding:40px 0;color:#444;font-size:.9em}
+.info-box{background:#2a2d3a;border-radius:8px;padding:10px 14px;font-size:.82em;color:#888;margin-bottom:14px}
+.warn-box{background:#2a2d3a;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.82em;color:#ffa500;text-align:center}
+</style>
+</head>
+<body>
+<div class="c" id="app">
+
+<!-- Setup -->
+<div id="scr-setup" style="display:none">
+<h1>🔐 KeyVault</h1>
+<p class="sub">首次使用，请设置主密码</p>
+<div class="card">
+<div class="fg"><label>主密码（至少4位）</label><input type="password" id="setup-pw" placeholder="输入主密码"></div>
+<div class="fg"><label>确认主密码</label><input type="password" id="setup-pw2" placeholder="再次输入" onkeydown="if(event.key==='Enter')doSetup()"></div>
+<div style="font-size:.82em;color:#888;margin-bottom:14px;text-align:center">🛡️ 硬件授权：生成密钥后需轻按板载 [BOOT] 键确认</div>
+<button class="btn btn-primary btn-block" id="btn-setup" onclick="doSetup()">创建密钥库</button>
+</div>
+</div>
+
+<!-- Login -->
+<div id="scr-login" style="display:none">
+<h1>🔐 KeyVault</h1>
+<p class="sub">输入主密码解锁</p>
+<div class="card">
+<div class="fg"><input type="password" id="login-pw" placeholder="主密码" onkeydown="if(event.key==='Enter')doLogin()"></div>
+<div style="font-size:.82em;color:#888;margin-bottom:14px;text-align:center">🛡️ 硬件授权：验证密码后请轻按板载 [BOOT] 键确认</div>
+<button class="btn btn-primary btn-block" id="btn-login" onclick="doLogin()">解锁</button>
+<p id="login-err" style="color:#e94560;font-size:.85em;text-align:center;margin-top:12px;display:none;line-height:1.4"></p>
+</div>
+</div>
+
+<!-- Main -->
+<div id="scr-main" style="display:none">
+<div class="topbar">
+<div class="left" id="status-bar">-</div>
+<div style="display:flex;gap:8px">
+<button class="btn btn-ghost btn-sm" onclick="openModal('backup')" title="备份/恢复">💾</button>
+<button class="btn btn-ghost btn-sm" onclick="openModal('pwd')" title="修改主密码">🔧</button>
+<button class="btn btn-ghost btn-sm" onclick="openReset()">⚠️</button>
+<button class="btn btn-ghost btn-sm" onclick="doLock()">🔒</button>
+</div>
+</div>
+
+<div class="tabs">
+<div class="tab on" id="tab-cred" onclick="switchTab('cred')">🔑 凭证</div>
+<div class="tab" id="tab-kv" onclick="switchTab('kv')">📦 存储</div>
+<div class="tab" id="tab-usb" onclick="switchTab('usb')">🔌 连接</div>
+</div>
+
+<!-- Credential Tab -->
+<div id="panel-cred">
+<div class="card" style="padding:12px 16px;margin-bottom:12px;background:#151821">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+<span style="font-size:.88em;font-weight:600">🛡️ 存储健康度</span>
+<span id="quick-health-pct" style="color:#4ecca3;font-weight:bold;font-size:1.05em">100% 极佳</span>
+</div>
+<div style="background:#0f1117;border-radius:4px;height:6px;overflow:hidden;margin-bottom:8px">
+<div id="quick-health-bar" style="background:#4ecca3;height:100%;width:100%"></div>
+</div>
+<div style="display:flex;justify-content:space-between;font-size:.78em;color:#888">
+<span id="quick-quota-text">容量: 0 / 1536 条 (0%)</span>
+<span id="quick-heal-text">双区自愈: 0 次 (镜像完整)</span>
+</div>
+</div>
+<div class="search-bar"><input type="text" id="search" placeholder="搜索凭证..." oninput="renderCreds()"></div>
+<div id="cred-list"></div>
+<button class="btn btn-primary btn-block" style="margin-top:12px" onclick="openCredAdd()">＋ 添加凭证</button>
+</div>
+
+<!-- KV Tab -->
+<div id="panel-kv" style="display:none">
+<div class="search-bar"><input type="text" id="kv-search" placeholder="搜索存储..." oninput="renderKv()"></div>
+<div id="kv-list"></div>
+<button class="btn btn-primary btn-block" style="margin-top:12px" onclick="openKvAdd()">＋ 添加存储</button>
+</div>
+
+<!-- USB Tab -->
+<div id="panel-usb" style="display:none">
+<div class="card">
+<h2 style="font-size:1em;color:#4ecca3;margin-bottom:12px">🔌 USB 连接与全链路加密</h2>
+<div id="usb-status" class="info-box" style="margin-bottom:14px">加载中...</div>
+<div class="info-box" style="margin-bottom:14px">管理地址：<b>http://192.168.7.1</b></div>
+<div class="warn-box">纯单一 RNDIS 虚拟网卡模式，即插即用自动获取 IP。杜绝多网卡冲突与地址争抢。任意时刻长按 BOOT 键 10 秒可激活应急 Wi-Fi。</div>
+</div>
+<div class="card">
+<h2 style="font-size:1em;color:#4ecca3;margin-bottom:12px">🛡️ 存储健康度与自愈监控</h2>
+<div id="health-dashboard" class="info-box" style="margin-bottom:14px;line-height:1.7">正在读取传感器数据...</div>
+<div style="display:flex;justify-content:flex-end">
+<button class="btn btn-ghost btn-sm" onclick="loadHealth()">🔄 刷新监控数据</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Add/Edit Cred Modal -->
+<div class="modal-overlay" id="modal-cred">
+<div class="modal">
+<h2 id="modal-cred-title">添加凭证</h2>
+<input type="hidden" id="cred-edit-idx" value="-1">
+<div class="fg"><label>名称</label><input type="text" id="cred-name" placeholder="如：GitHub"></div>
+<div class="fg"><label>URL</label><input type="text" id="cred-url" placeholder="如：https://github.com"></div>
+<div class="fg"><label>用户名</label><input type="text" id="cred-user" placeholder="邮箱或用户名"></div>
+<div class="fg"><label>密码</label>
+<div class="row">
+<div style="flex:1"><input type="password" id="cred-pass" placeholder="密码"></div>
+<button class="btn btn-ghost btn-sm" onclick="togglePw('cred-pass')">👁</button>
+<button class="btn btn-ghost btn-sm" onclick="togglePwGen()">🎲</button>
+</div>
+</div>
+<div id="pw-gen-panel" style="display:none">
+<div class="pw-gen-opts">
+<label><input type="checkbox" id="pg-up" checked> 大写</label>
+<label><input type="checkbox" id="pg-lo" checked> 小写</label>
+<label><input type="checkbox" id="pg-di" checked> 数字</label>
+<label><input type="checkbox" id="pg-sy"> 符号</label>
+</div>
+<div class="row" style="gap:8px;margin-bottom:8px">
+<input type="text" id="pg-len" value="16" style="width:60px;text-align:center">
+<button class="btn btn-ghost btn-sm" onclick="doPwGen()">生成</button>
+<button class="btn btn-ghost btn-sm" onclick="usePwGen()">使用</button>
+</div>
+<div class="generated-pw" id="pg-result"></div>
+</div>
+<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+<button class="btn btn-ghost" onclick="closeModal('cred')">取消</button>
+<button class="btn btn-primary" onclick="saveCred()">保存</button>
+</div>
+</div>
+</div>
+
+<!-- Add/Edit KV Modal -->
+<div class="modal-overlay" id="modal-kv">
+<div class="modal">
+<h2 id="modal-kv-title">添加存储</h2>
+<input type="hidden" id="kv-edit-old" value="">
+<div class="fg"><label>名称（Key）</label><input type="text" id="kv-key" placeholder="如：ssh-server, wifi-home"></div>
+<div class="fg"><label>内容（Value）</label><textarea id="kv-val" placeholder="任意文本，最长511字节"></textarea></div>
+<div class="info-box">支持任意字符串：SSH密钥、API Token、WiFi密码、笔记等</div>
+<div style="display:flex;gap:10px;justify-content:flex-end">
+<button class="btn btn-ghost" onclick="closeModal('kv')">取消</button>
+<button class="btn btn-primary" onclick="saveKv()">保存</button>
+</div>
+</div>
+</div>
+
+<!-- KV View Modal -->
+<div class="modal-overlay" id="modal-kv-view">
+<div class="modal">
+<h2 id="kv-view-title">-</h2>
+<pre id="kv-view-body" style="white-space:pre-wrap;word-break:break-all;font-size:.85em;color:#4ecca3;background:#0f1117;padding:12px;border-radius:8px;max-height:300px;overflow-y:auto"></pre>
+<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+<button class="btn btn-ghost" onclick="copyKvValue()">📋 复制</button>
+<button class="btn btn-ghost" onclick="editKv()">✏️ 编辑</button>
+<button class="btn btn-danger" onclick="delKv()">🗑 删除</button>
+<button class="btn btn-ghost" onclick="closeModal('kv-view')">关闭</button>
+</div>
+</div>
+</div>
+
+<!-- Backup / Restore Modal -->
+<div class="modal-overlay" id="modal-backup">
+<div class="modal">
+<h2>💾 备份与恢复</h2>
+<p style="color:#888;font-size:.85em;margin-bottom:14px">备份内容是密文，不含主密码，离线保存同样无法解开。</p>
+<div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+<button class="btn btn-primary" id="btn-export" onclick="doExport()">导出备份文件</button>
+</div>
+<div class="fg"><label>选择备份文件（.kvbk）</label><input type="file" id="import-file" accept=".kvbk,.bak,.txt"></div>
+<div class="fg"><label>该备份对应的主密码</label><input type="password" id="import-pw" placeholder="用于校验备份，校验通过后覆盖当前全部数据"></div>
+<div style="display:flex;gap:10px;justify-content:flex-end">
+<button class="btn btn-ghost" onclick="closeModal('backup')">关闭</button>
+<button class="btn btn-danger" id="btn-import" onclick="doImport()">恢复（覆盖当前数据）</button>
+</div>
+</div>
+</div>
+
+<!-- Change Master Password Modal -->
+<div class="modal-overlay" id="modal-pwd">
+<div class="modal">
+<h2>🔧 修改主密码</h2>
+<div class="fg"><label>当前主密码</label><input type="password" id="pw-old" placeholder="输入当前主密码"></div>
+<div class="fg"><label>新主密码（至少4位）</label><input type="password" id="pw-new" placeholder="输入新主密码"></div>
+<div class="fg"><label>确认新主密码</label><input type="password" id="pw-new2" placeholder="再次输入"></div>
+<p style="color:#888;font-size:.82em;margin:10px 0">设备会用新密钥重新加密全部条目，期间请勿断开 USB。</p>
+<div style="display:flex;gap:10px;justify-content:flex-end">
+<button class="btn btn-ghost" onclick="closeModal('pwd')">取消</button>
+<button class="btn btn-primary" id="btn-chpw" onclick="doChangePw()">确认修改</button>
+</div>
+</div>
+</div>
+
+<!-- Reset Modal -->
+<div class="modal-overlay" id="modal-reset">
+<div class="modal">
+<h2>⚠️ 重置密钥库</h2>
+<p style="color:#e94560;margin-bottom:16px;font-size:.9em">此操作将永久删除所有凭证、存储数据和主密码，不可恢复！</p>
+<div style="display:flex;gap:10px;justify-content:flex-end">
+<button class="btn btn-ghost" onclick="closeModal('reset')">取消</button>
+<button class="btn btn-danger" onclick="doReset()">确认重置</button>
+</div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+</div>
+
+<script>
+var T=sessionStorage.getItem('kv_token')||'',CREDS=[],KVS=[],KVF=[],CUR_KV='';
+var HEALTH_DATA=null,LOCK_TMR=null;
+
+function $(id){return document.getElementById(id)}
+function showScr(id){['scr-setup','scr-login','scr-main'].forEach(s=>$(s).style.display='none');$(id).style.display='block'}
+function toast(m,ok){var t=$('toast');t.textContent=m;t.className='toast '+(ok?'toast-ok':'toast-err')+' show';setTimeout(function(){t.className='toast'},2500)}
+
+/* Modal: 直接操作 DOM，不走函数覆写 */
+function openModal(name){$('modal-'+name).classList.add('show')}
+function closeModal(name){$('modal-'+name).classList.remove('show')}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')document.querySelectorAll('.modal-overlay.show').forEach(m=>m.classList.remove('show'))});
+document.addEventListener('click',function(e){if(e.target.classList.contains('modal-overlay'))e.target.classList.remove('show')});
+
+function togglePw(id){var i=$(id);i.type=i.type==='password'?'text':'password'}
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+/* 复制：安全上下文用 clipboard API，http 明文访问时回退 execCommand */
+function copyText(t){
+if(navigator.clipboard&&window.isSecureContext)
+return navigator.clipboard.writeText(t).then(function(){toast('已复制',true)}).catch(function(){fallbackCopy(t)});
+return fallbackCopy(t)
+}
+function fallbackCopy(t){
+var a=document.createElement('textarea'),ok=false;
+a.value=t;a.setAttribute('readonly','');a.style.position='fixed';a.style.top='-1000px';
+document.body.appendChild(a);a.select();a.setSelectionRange(0,a.value.length);
+try{ok=document.execCommand('copy')}catch(e){ok=false}
+document.body.removeChild(a);toast(ok?'已复制':'复制失败',ok)
+}
+
+/* ── Pure JS Crypto for HTTP Zero-Config E2EE (X25519 + SHA256 + AES-256-GCM) ── */
+function sha256(data){
+var K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
+var H=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];
+var l=data.length*8,len=((data.length+9+63)>>6)<<6,msg=new Uint8Array(len);
+msg.set(data);msg[data.length]=0x80;
+var view=new DataView(msg.buffer);view.setUint32(len-4,l,false);
+var W=new Uint32Array(64);
+for(var i=0;i<len;i+=64){
+for(var t=0;t<16;t++)W[t]=view.getUint32(i+t*4,false);
+for(var t=16;t<64;t++){
+var s0=(Math.imul(W[t-15]>>>7,1)|(W[t-15]<<25))^(Math.imul(W[t-15]>>>18,1)|(W[t-15]<<14))^(W[t-15]>>>3);
+var s1=(Math.imul(W[t-2]>>>17,1)|(W[t-2]<<15))^(Math.imul(W[t-2]>>>19,1)|(W[t-2]<<13))^(W[t-2]>>>10);
+W[t]=(W[t-16]+s0+W[t-7]+s1)|0;
+}
+var a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+for(var t=0;t<64;t++){
+var S1=((e>>>6)|(e<<26))^((e>>>11)|(e<<21))^((e>>>25)|(e<<7));
+var ch=(e&f)^((~e)&g);
+var temp1=(h+S1+ch+K[t]+W[t])|0;
+var S0=((a>>>2)|(a<<30))^((a>>>13)|(a<<19))^((a>>>22)|(a<<10));
+var maj=(a&b)^(a&c)^(b&c);
+var temp2=(S0+maj)|0;
+h=g;g=f;f=e;e=(d+temp1)|0;d=c;c=b;b=a;a=(temp1+temp2)|0;
+}
+H[0]=(H[0]+a)|0;H[1]=(H[1]+b)|0;H[2]=(H[2]+c)|0;H[3]=(H[3]+d)|0;
+H[4]=(H[4]+e)|0;H[5]=(H[5]+f)|0;H[6]=(H[6]+g)|0;H[7]=(H[7]+h)|0;
+}
+var out=new Uint8Array(32),outView=new DataView(out.buffer);
+for(var i=0;i<8;i++)outView.setUint32(i*4,H[i],false);
+return out;
+}
+
+var P25519=(1n<<255n)-19n;
+function modP(n){var r=n%P25519;return r>=0n?r:r+P25519}
+function invP(a){var res=1n,b=modP(a),e=P25519-2n;while(e>0n){if(e&1n)res=modP(res*b);b=modP(b*b);e>>=1n}return res}
+function x25519(kBytes,uBytes){
+var k=new Uint8Array(kBytes);k[0]&=248;k[31]&=127;k[31]|=64;
+var kScalar=0n;for(var i=0;i<32;i++)kScalar|=BigInt(k[i])<<(8n*BigInt(i));
+var u=0n;for(var i=0;i<32;i++)u|=BigInt(uBytes[i])<<(8n*BigInt(i));
+u=modP(u);
+var x1=u,x2=1n,z2=0n,x3=u,z3=1n,swap=0n;
+for(var t=254;t>=0;t--){
+var kt=(kScalar>>BigInt(t))&1n;swap^=kt;
+if(swap){var tx=x2;x2=x3;x3=tx;var tz=z2;z2=z3;z3=tz}
+swap=kt;
+var A=modP(x2+z2),AA=modP(A*A),B=modP(x2-z2),BB=modP(B*B),E=modP(AA-BB);
+var C=modP(x3+z3),D=modP(x3-z3),DA=modP(D*A),CB=modP(C*B);
+x3=modP((DA+CB)*(DA+CB));z3=modP(x1*((DA-CB)*(DA-CB)));
+x2=modP(AA*BB);z2=modP(E*(AA+121665n*E));
+}
+if(swap){var tx=x2;x2=x3;x3=tx;var tz=z2;z2=z3;z3=tz}
+var res=modP(x2*invP(z2)),out=new Uint8Array(32);
+for(var i=0;i<32;i++)out[i]=Number((res>>(8n*BigInt(i)))&0xFFn);
+return out;
+}
+
+var AES_SBOX=new Uint8Array([
+0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
+0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
+0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,
+0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,
+0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,
+0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,
+0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,
+0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,
+0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,
+0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,
+0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,
+0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,
+0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,
+0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,
+0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,
+0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16]);
+var AES_RCON=[0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36];
+
+function aesKeyExpand(key){
+var w=new Uint32Array(60);
+for(var i=0;i<8;i++)w[i]=(key[4*i]<<24)|(key[4*i+1]<<16)|(key[4*i+2]<<8)|key[4*i+3];
+for(var i=8;i<60;i++){
+var temp=w[i-1];
+if(i%8===0){
+temp=(temp<<8)|(temp>>>24);
+temp=(AES_SBOX[(temp>>>24)&0xff]<<24)|(AES_SBOX[(temp>>>16)&0xff]<<16)|(AES_SBOX[(temp>>>8)&0xff]<<8)|AES_SBOX[temp&0xff];
+temp^=(AES_RCON[(i/8)-1]<<24);
+}else if(i%8===4){
+temp=(AES_SBOX[(temp>>>24)&0xff]<<24)|(AES_SBOX[(temp>>>16)&0xff]<<16)|(AES_SBOX[(temp>>>8)&0xff]<<8)|AES_SBOX[temp&0xff];
+}
+w[i]=w[i-8]^temp;
+}
+return w;
+}
+
+function xtime(a){return ((a<<1)^((a&0x80)?0x1b:0))&0xff}
+
+function aesEncryptBlock(w,input,output){
+var s0=(input[0]<<24)|(input[1]<<16)|(input[2]<<8)|input[3];
+var s1=(input[4]<<24)|(input[5]<<16)|(input[6]<<8)|input[7];
+var s2=(input[8]<<24)|(input[9]<<16)|(input[10]<<8)|input[11];
+var s3=(input[12]<<24)|(input[13]<<16)|(input[14]<<8)|input[15];
+s0^=w[0];s1^=w[1];s2^=w[2];s3^=w[3];
+for(var r=1;r<=13;r++){
+var a0=AES_SBOX[(s0>>>24)&0xff],a1=AES_SBOX[(s1>>>16)&0xff],a2=AES_SBOX[(s2>>>8)&0xff],a3=AES_SBOX[s3&0xff];
+var b0=AES_SBOX[(s1>>>24)&0xff],b1=AES_SBOX[(s2>>>16)&0xff],b2=AES_SBOX[(s3>>>8)&0xff],b3=AES_SBOX[s0&0xff];
+var c0=AES_SBOX[(s2>>>24)&0xff],c1=AES_SBOX[(s3>>>16)&0xff],c2=AES_SBOX[(s0>>>8)&0xff],c3=AES_SBOX[s1&0xff];
+var d0=AES_SBOX[(s3>>>24)&0xff],d1=AES_SBOX[(s0>>>16)&0xff],d2=AES_SBOX[(s1>>>8)&0xff],d3=AES_SBOX[s2&0xff];
+var t0=xtime(a0^a1),t1=xtime(a1^a2),t2=xtime(a2^a3),t3=xtime(a3^a0),u0=a0^a1^a2^a3;
+var col0=((a0^t0^u0)<<24)|((a1^t1^u0)<<16)|((a2^t2^u0)<<8)|(a3^t3^u0);
+var tb0=xtime(b0^b1),tb1=xtime(b1^b2),tb2=xtime(b2^b3),tb3=xtime(b3^b0),ub0=b0^b1^b2^b3;
+var col1=((b0^tb0^ub0)<<24)|((b1^tb1^ub0)<<16)|((b2^tb2^ub0)<<8)|(b3^tb3^ub0);
+var tc0=xtime(c0^c1),tc1=xtime(c1^c2),tc2=xtime(c2^c3),tc3=xtime(c3^c0),uc0=c0^c1^c2^c3;
+var col2=((c0^tc0^uc0)<<24)|((c1^tc1^uc0)<<16)|((c2^tc2^uc0)<<8)|(c3^tc3^uc0);
+var td0=xtime(d0^d1),td1=xtime(d1^d2),td2=xtime(d2^d3),td3=xtime(d3^d0),ud0=d0^d1^d2^d3;
+var col3=((d0^td0^ud0)<<24)|((d1^td1^ud0)<<16)|((d2^td2^ud0)<<8)|(d3^td3^ud0);
+s0=col0^w[r*4];s1=col1^w[r*4+1];s2=col2^w[r*4+2];s3=col3^w[r*4+3];
+}
+var a0=AES_SBOX[(s0>>>24)&0xff],a1=AES_SBOX[(s1>>>16)&0xff],a2=AES_SBOX[(s2>>>8)&0xff],a3=AES_SBOX[s3&0xff];
+var b0=AES_SBOX[(s1>>>24)&0xff],b1=AES_SBOX[(s2>>>16)&0xff],b2=AES_SBOX[(s3>>>8)&0xff],b3=AES_SBOX[s0&0xff];
+var c0=AES_SBOX[(s2>>>24)&0xff],c1=AES_SBOX[(s3>>>16)&0xff],c2=AES_SBOX[(s0>>>8)&0xff],c3=AES_SBOX[s1&0xff];
+var d0=AES_SBOX[(s3>>>24)&0xff],d1=AES_SBOX[(s0>>>16)&0xff],d2=AES_SBOX[(s1>>>8)&0xff],d3=AES_SBOX[s2&0xff];
+s0=((a0<<24)|(a1<<16)|(a2<<8)|a3)^w[56];
+s1=((b0<<24)|(b1<<16)|(b2<<8)|b3)^w[57];
+s2=((c0<<24)|(c1<<16)|(c2<<8)|c3)^w[58];
+s3=((d0<<24)|(d1<<16)|(d2<<8)|d3)^w[59];
+output[0]=s0>>>24;output[1]=(s0>>>16)&0xff;output[2]=(s0>>>8)&0xff;output[3]=s0&0xff;
+output[4]=s1>>>24;output[5]=(s1>>>16)&0xff;output[6]=(s1>>>8)&0xff;output[7]=s1&0xff;
+output[8]=s2>>>24;output[9]=(s2>>>16)&0xff;output[10]=(s2>>>8)&0xff;output[11]=s2&0xff;
+output[12]=s3>>>24;output[13]=(s3>>>16)&0xff;output[14]=(s3>>>8)&0xff;output[15]=s3&0xff;
+}
+
+var R_GF128=0xe1000000000000000000000000000000n;
+function ghashMul(X,Y){
+var z=0n,v=Y;
+for(var i=127;i>=0;i--){
+if((X>>BigInt(i))&1n)z^=v;
+if(v&1n)v=(v>>1n)^R_GF128;else v>>=1n;
+}
+return z;
+}
+
+function bytesToBigInt(b){var r=0n;for(var i=0;i<16;i++)r=(r<<8n)|BigInt(b[i]);return r}
+function bigIntToBytes(val,out){for(var i=15;i>=0;i--){out[i]=Number(val&0xffn);val>>=8n}}
+
+function aesGcm(key,iv,data,isEncrypt,authTag){
+var w=aesKeyExpand(key);
+var H=new Uint8Array(16);aesEncryptBlock(w,new Uint8Array(16),H);
+var H_val=bytesToBigInt(H);
+var J0=new Uint8Array(16);J0.set(iv);J0[15]=1;
+var J0_enc=new Uint8Array(16);aesEncryptBlock(w,J0,J0_enc);
+var out=new Uint8Array(data.length),ctr=new Uint8Array(16);ctr.set(J0);
+var block=new Uint8Array(16),ctrVal=1;
+for(var i=0;i<data.length;i+=16){
+ctrVal++;
+ctr[12]=(ctrVal>>>24)&0xff;ctr[13]=(ctrVal>>>16)&0xff;ctr[14]=(ctrVal>>>8)&0xff;ctr[15]=ctrVal&0xff;
+aesEncryptBlock(w,ctr,block);
+var chunk=Math.min(16,data.length-i);
+for(var j=0;j<chunk;j++)out[i+j]=data[i+j]^block[j];
+}
+var cipher=isEncrypt?out:data;
+var S=0n,paddedLen=Math.ceil(cipher.length/16)*16;
+var padded=new Uint8Array(paddedLen);padded.set(cipher);
+for(var i=0;i<paddedLen;i+=16){
+var blk=bytesToBigInt(padded.subarray(i,i+16));
+S=ghashMul(S^blk,H_val);
+}
+var lenBlock=BigInt(cipher.length*8);
+S=ghashMul(S^lenBlock,H_val);
+var tag=new Uint8Array(16);bigIntToBytes(S,tag);
+for(var i=0;i<16;i++)tag[i]^=J0_enc[i];
+if(isEncrypt)return{cipher:out,tag:tag};
+var diff=0;for(var i=0;i<16;i++)diff|=(tag[i]^authTag[i]);
+if(diff!==0)throw new Error('E2EE Auth Tag mismatch');
+return out;
+}
+
+function hexToBytes(hex){
+var bytes=new Uint8Array(hex.length/2);
+for(var i=0;i<bytes.length;i++)bytes[i]=parseInt(hex.substr(i*2,2),16);
+return bytes;
+}
+function bytesToHex(bytes){
+var s='';for(var i=0;i<bytes.length;i++){var h=bytes[i].toString(16);s+=(h.length===1?'0':'')+h}return s;
+}
+function strToUtf8(str){if(typeof TextEncoder!=='undefined')return new TextEncoder().encode(str);var arr=[];for(var i=0;i<str.length;i++){var c=str.charCodeAt(i);if(c<0x80)arr.push(c);else if(c<0x800){arr.push(0xc0|(c>>6));arr.push(0x80|(c&0x3f))}else{arr.push(0xe0|(c>>12));arr.push(0x80|((c>>6)&0x3f));arr.push(0x80|(c&0x3f))}}return new Uint8Array(arr)}
+function utf8ToStr(bytes){if(typeof TextDecoder!=='undefined')return new TextDecoder().decode(bytes);var str='',i=0;while(i<bytes.length){var b1=bytes[i++];if(b1<0x80)str+=String.fromCharCode(b1);else if(b1<0xe0){var b2=bytes[i++];str+=String.fromCharCode(((b1&0x1f)<<6)|(b2&0x3f))}else if(b1<0xf0){var b2=bytes[i++],b3=bytes[i++];str+=String.fromCharCode(((b1&0x0f)<<12)|((b2&0x3f)<<6)|(b3&0x3f))}else{var b2=bytes[i++],b3=bytes[i++],b4=bytes[i++];var cp=((b1&0x07)<<18)|((b2&0x3f)<<12)|((b3&0x3f)<<6)|(b4&0x3f);cp-=0x10000;str+=String.fromCharCode(0xd800+(cp>>10),0xdc00+(cp&0x3ff))}}return str}
+
+/* ── E2EE Session Management & Transparent API Pipeline ── */
+var E2EE_SESSION_ID='',E2EE_KEY=null,E2EE_PROMISE=null;
+
+function e2eeHandshake(){
+if(E2EE_SESSION_ID&&E2EE_KEY)return Promise.resolve(true);
+if(E2EE_PROMISE)return E2EE_PROMISE;
+E2EE_PROMISE=new Promise(function(resolve){
+try{
+var priv=new Uint8Array(32);
+if(window.crypto&&window.crypto.getRandomValues)window.crypto.getRandomValues(priv);
+else{for(var i=0;i<32;i++)priv[i]=Math.floor(Math.random()*256)}
+var basePoint=new Uint8Array(32);basePoint[0]=9;
+var clientPub=x25519(priv,basePoint);
+fetch('/api/e2ee/handshake',{
+method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({client_pub:bytesToHex(clientPub)})
+}).then(function(r){return r.json()}).then(function(d){
+if(!d||!d.ok){E2EE_PROMISE=null;resolve(false);return}
+var shared=x25519(priv,hexToBytes(d.server_pub));
+E2EE_KEY=sha256(shared);
+E2EE_SESSION_ID=d.session_id;
+E2EE_PROMISE=null;
+resolve(true);
+}).catch(function(){E2EE_PROMISE=null;resolve(false)});
+}catch(e){E2EE_PROMISE=null;resolve(false)}
+});
+return E2EE_PROMISE;
+}
+
+function doApi(m,p,b,isRetry){
+var headers={'X-Token':T},bodyData=null;
+if(E2EE_SESSION_ID&&E2EE_KEY){
+headers['X-E2EE-Session']=E2EE_SESSION_ID;
+if(b!==undefined&&b!==null){
+headers['Content-Type']='application/json';
+var plain=strToUtf8(JSON.stringify(b));
+var iv=new Uint8Array(12);
+if(window.crypto&&window.crypto.getRandomValues)window.crypto.getRandomValues(iv);
+else{for(var i=0;i<12;i++)iv[i]=Math.floor(Math.random()*256)}
+var enc=aesGcm(E2EE_KEY,iv,plain,true);
+bodyData=JSON.stringify({iv:bytesToHex(iv),tag:bytesToHex(enc.tag),data:bytesToHex(enc.cipher)});
+}
+}else{
+if(b!==undefined&&b!==null){headers['Content-Type']='application/json';bodyData=JSON.stringify(b)}
+}
+
+return fetch('/api'+p,{method:m,headers:headers,body:bodyData}).then(function(r){
+return r.json();
+}).then(function(d){
+if(E2EE_SESSION_ID&&d&&!d.e2ee&&!isRetry){
+E2EE_SESSION_ID='';E2EE_KEY=null;
+return e2eeHandshake().then(function(){return doApi(m,p,b,true)});
+}
+if(d&&d.e2ee&&E2EE_KEY){
+try{
+var plainBytes=aesGcm(E2EE_KEY,hexToBytes(d.iv),hexToBytes(d.data),false,hexToBytes(d.tag));
+d=JSON.parse(utf8ToStr(plainBytes));
+}catch(err){console.error('E2EE Decrypt Err',err);return d}
+}
+if(d&&!d.ok&&d.error==='unauthorized'&&p!=='/login'&&p!=='/setup'){
+var wasInMain=$('scr-main').style.display==='block';
+T='';sessionStorage.removeItem('kv_token');
+showScr('scr-login');
+if(wasInMain)toast('会话已超时，请重新解锁',false);
+}
+return d;
+});
+}
+
+function resetLock(){if(LOCK_TMR)clearTimeout(LOCK_TMR);LOCK_TMR=setTimeout(doLock,15*60*1000)}
+
+var LAST_ACT=Date.now();
+function touchActivity(){
+var now=Date.now();
+if(now-LAST_ACT>15000){
+LAST_ACT=now;
+resetLock();
+}
+}
+['mousedown','keydown','touchstart','scroll'].forEach(function(ev){
+window.addEventListener(ev,touchActivity,{passive:true});
+});
+
+function api(m,p,b){
+resetLock();
+if(!E2EE_SESSION_ID||!E2EE_KEY){
+return e2eeHandshake().then(function(){return doApi(m,p,b,false)});
+}
+return doApi(m,p,b,false);
+}
+
+/* Tabs */
+function switchTab(name){
+['cred','kv','usb'].forEach(function(t){
+$('tab-'+t).className='tab'+(t===name?' on':'');
+$('panel-'+t).style.display=t===name?'block':'none';
+});
+if(name==='cred'){renderCreds();loadCreds()}
+if(name==='kv'){renderKv();loadKv()}
+if(name==='usb')loadUsb();
+}
+
+/* Setup */
+/* 派生密钥要跑 600k 轮 PBKDF2，设备侧是数秒级阻塞，
+   不给反馈的话用户会以为卡死而反复点击 */
+function busy(id,text,on){
+var b=$(id);if(!b)return;
+if(on){if(!b.dataset.label)b.dataset.label=b.textContent;b.disabled=true;b.textContent=text}
+else{b.disabled=false;if(b.dataset.label)b.textContent=b.dataset.label}
+}
+
+function doSetup(){
+var pw=$('setup-pw').value,pw2=$('setup-pw2').value;
+if(pw.length<4){toast('密码至少4位',false);return}
+if(pw!==pw2){toast('两次密码不一致',false);return}
+busy('btn-setup','🔘 请轻按板载 BOOT 键确认…',true);
+api('POST','/setup',{password:pw}).then(function(d){
+busy('btn-setup','',false);
+if(d.ok){toast('密钥库已创建并授权',true);T=d.token;sessionStorage.setItem('kv_token',T);loadAll();showScr('scr-main')}
+else toast(d.error||'设置失败',false)
+}).catch(function(){busy('btn-setup','',false);toast('网络错误或请求超时',false)})
+}
+
+/* Login */
+function doLogin(){
+var pw=$('login-pw').value;
+if(!pw)return;
+busy('btn-login','🔘 请轻按板载 BOOT 键确认…',true);
+$('login-err').style.display='none';
+api('POST','/login',{password:pw}).then(function(d){
+busy('btn-login','',false);
+if(d.ok){T=d.token;sessionStorage.setItem('kv_token',T);loadAll();showScr('scr-main');$('login-err').style.display='none'}
+else{$('login-err').textContent=d.error||'密码错误';$('login-err').style.display='block'}
+}).catch(function(){busy('btn-login','',false);toast('网络错误或请求超时',false)})
+}
+
+function doLock(){
+/* 必须通知设备真正销毁会话：只清本地变量的话服务端仍处解锁态，
+   直到 5 分钟超时才锁，期间任何人都能带着旧 token 读数据 */
+api('POST','/lock',{}).catch(function(){});
+if(LOCK_TMR)clearTimeout(LOCK_TMR);
+T='';sessionStorage.removeItem('kv_token');CREDS=[];KVS=[];
+$('login-pw').value='';
+showScr('scr-login');
+}
+
+/* Backup / Restore */
+function doExport(){
+busy('btn-export','正在导出…',true);
+api('POST','/export',{}).then(function(d){
+busy('btn-export','',false);
+if(d.ok&&d.backup){
+var raw=atob(d.backup),arr=new Uint8Array(raw.length);
+for(var i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
+var blob=new Blob([arr],{type:'application/octet-stream'});
+var a=document.createElement('a');
+a.href=URL.createObjectURL(blob);
+a.download='keyvault-'+new Date().toISOString().slice(0,10)+'.kvbk';
+document.body.appendChild(a);a.click();document.body.removeChild(a);
+setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
+toast('备份已下载',true)
+}else toast(d.error||'导出失败',false)
+}).catch(function(){busy('btn-export','',false);toast('网络错误',false)})
+}
+
+function doImport(){
+var f=$('import-file').files[0],pw=$('import-pw').value;
+if(!f){toast('请选择备份文件',false);return}
+if(!pw){toast('请输入该备份的主密码',false);return}
+var r=new FileReader();
+r.onload=function(e){
+busy('btn-import','正在恢复…',true);
+var bytes=new Uint8Array(e.target.result);
+var binary='';
+for(var i=0;i<bytes.byteLength;i++)binary+=String.fromCharCode(bytes[i]);
+var b64=btoa(binary);
+api('POST','/import',{backup:b64,password:pw}).then(function(d){
+busy('btn-import','',false);
+if(d.ok){
+toast('已恢复，请重新解锁',true);closeModal('backup');
+$('import-file').value='';$('import-pw').value='';
+doLock()   /* 服务端已强制锁定，本地同步回到登录页 */
+}else toast(d.error||'恢复失败',false)
+}).catch(function(){busy('btn-import','',false);toast('网络错误',false)})
+};
+r.onerror=function(){toast('文件读取失败',false)};
+r.readAsArrayBuffer(f)
+}
+
+/* Change master password */
+function doChangePw(){
+var o=$('pw-old').value,n=$('pw-new').value,n2=$('pw-new2').value;
+if(!o){toast('请输入当前主密码',false);return}
+if(n.length<4){toast('新密码至少4位',false);return}
+if(n!==n2){toast('两次新密码不一致',false);return}
+busy('btn-chpw','正在重新加密…',true);
+api('POST','/chpwd',{old:o,'new':n}).then(function(d){
+busy('btn-chpw','',false);
+if(d.ok){
+/* 服务端会签发新令牌，旧令牌同时失效 */
+toast('主密码已更新',true);T=d.token||T;closeModal('pwd');
+$('pw-old').value='';$('pw-new').value='';$('pw-new2').value='';loadAll()
+}else toast(d.error||'修改失败',false)
+}).catch(function(){busy('btn-chpw','',false);toast('网络错误',false)})
+}
+
+function getHealthPct(){
+if(!HEALTH_DATA)return 100;
+if(HEALTH_DATA.read_only)return 50;
+var wear=Math.min(100,(HEALTH_DATA.writes/100000)*100);
+return Math.round(Math.max(0,100-wear));
+}
+
+function loadAll(){loadHealth();loadCreds();loadKv();updateStatus()}
+function updateStatus(){
+var hp=getHealthPct();
+var hpStr=' · <span style="color:#4ecca3" title="闪存寿命与双区健康度">🛡️ 健康度 '+hp+'%</span>';
+var e2eeStr=E2EE_KEY?' · <span style="color:#4ecca3" title="全链路端到端加密已启用">🔒 E2EE</span>':'';
+$('status-bar').innerHTML=CREDS.length+' 凭证 · '+KVS.length+' 存储'+hpStr+e2eeStr;
+}
+
+/* === Credentials === */
+function loadCreds(){
+api('GET','/creds').then(function(d){
+if(d.ok){CREDS=d.creds||[];renderCreds();updateStatus()}
+}).catch(function(){})
+}
+
+function renderCreds(){
+var q=$('search').value.toLowerCase();
+var list=$('cred-list');
+var f=CREDS.filter(function(c){
+return !q||c.name.toLowerCase().indexOf(q)>=0||(c.url||'').toLowerCase().indexOf(q)>=0||(c.user||'').toLowerCase().indexOf(q)>=0
+});
+if(f.length===0){list.innerHTML='<div class="empty">'+(CREDS.length===0?'暂无凭证':'无匹配结果')+'</div>';return}
+list.innerHTML=f.map(function(c){
+var i=CREDS.indexOf(c);
+return '<div class="item"><div class="item-info"><div class="item-name">'+esc(c.name)+'</div><div class="item-sub">'+esc(c.url||c.user||'')+'</div></div><div class="item-actions">'+
+'<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copyCred('+i+',\'user\')" title="复制用户名">👤</button>'+
+'<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copyCred('+i+',\'pass\')" title="复制密码">🔑</button>'+
+'<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editCred('+i+')" title="编辑">✏️</button>'+
+'<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();delCred('+i+')" title="删除">🗑</button>'+
+'</div></div>'
+}).join('')
+}
+
+function copyCred(i,field){
+api('GET','/cred/'+i).then(function(d){
+if(d.ok){var t=field==='user'?d.cred.user:d.cred.pass;copyText(t)}
+}).catch(function(){toast('获取失败',false)})
+}
+
+function openCredAdd(){
+$('modal-cred-title').textContent='添加凭证';
+$('cred-edit-idx').value='-1';
+$('cred-name').value='';$('cred-url').value='';$('cred-user').value='';$('cred-pass').value='';
+$('pw-gen-panel').style.display='none';
+openModal('cred')
+}
+
+function editCred(i){
+api('GET','/cred/'+i).then(function(d){
+if(d.ok){
+$('modal-cred-title').textContent='编辑凭证';
+$('cred-edit-idx').value=i;
+$('cred-name').value=d.cred.name;$('cred-url').value=d.cred.url||'';
+$('cred-user').value=d.cred.user||'',$('cred-pass').value=d.cred.pass||'';
+$('pw-gen-panel').style.display='none';
+openModal('cred')
+}
+}).catch(function(){toast('获取失败',false)})
+}
+
+function saveCred(){
+var idx=parseInt($('cred-edit-idx').value);
+var c={name:$('cred-name').value.trim(),url:$('cred-url').value.trim(),user:$('cred-user').value.trim(),pass:$('cred-pass').value};
+if(!c.name){toast('名称不能为空',false);return}
+if(idx>=0){api('POST','/cred/update',{id:idx,cred:c}).then(function(d){if(d.ok){toast('已更新',true);closeModal('cred');loadCreds()}else toast(d.error,false)}).catch(function(){toast('网络错误',false)})}
+else{api('POST','/creds',c).then(function(d){if(d.ok){toast('已添加',true);closeModal('cred');loadCreds()}else toast(d.error,false)}).catch(function(){toast('网络错误',false)})}
+}
+
+function delCred(i){
+if(!confirm('删除 "'+CREDS[i].name+'" ？'))return;
+api('POST','/cred/delete',{id:i}).then(function(d){if(d.ok){toast('已删除',true);loadCreds()}else toast(d.error,false)}).catch(function(){toast('网络错误',false)})
+}
+
+function togglePwGen(){var p=$('pw-gen-panel');p.style.display=p.style.display==='none'?'block':'none';if(p.style.display==='block'&&!$('pg-result').textContent)doPwGen()}
+function doPwGen(){
+var l=parseInt($('pg-len').value)||16;
+api('POST','/generate',{length:l,upper:$('pg-up').checked,lower:$('pg-lo').checked,digits:$('pg-di').checked,symbols:$('pg-sy').checked})
+.then(function(d){if(d.ok)$('pg-result').textContent=d.password}).catch(function(){})
+}
+function usePwGen(){var p=$('pg-result').textContent;if(p)$('cred-pass').value=p;$('pw-gen-panel').style.display='none'}
+
+/* === KV Storage === */
+function loadKv(){
+api('GET','/kv').then(function(d){
+if(d.ok){KVS=d.keys||[];renderKv();updateStatus()}
+}).catch(function(){})
+}
+
+function renderKv(){
+var q=$('kv-search').value.toLowerCase();
+var list=$('kv-list');
+KVF=KVS.filter(function(k){return !q||k.toLowerCase().indexOf(q)>=0});
+if(KVF.length===0){list.innerHTML='<div class="empty">'+(KVS.length===0?'暂无存储数据':'无匹配结果')+'</div>';return}
+/* 只把下标写进 onclick，键名不参与拼 HTML，避免引号/反斜杠破坏 DOM */
+list.innerHTML=KVF.map(function(k,i){
+return '<div class="item"><div class="item-info"><div class="item-name">📦 '+esc(k)+'</div></div><div class="item-actions">'+
+'<button class="btn btn-ghost btn-sm" onclick="viewKvIdx('+i+')" title="查看">👁</button>'+
+'<button class="btn btn-ghost btn-sm" onclick="copyKvIdx('+i+')" title="复制">📋</button>'+
+'<button class="btn btn-ghost btn-sm" onclick="editKvIdx('+i+')" title="编辑">✏️</button>'+
+'<button class="btn btn-ghost btn-sm" onclick="delKvIdx('+i+')" title="删除">🗑</button>'+
+'</div></div>'
+}).join('')
+}
+
+function viewKvIdx(i){viewKv(KVF[i])}
+function copyKvIdx(i){copyKv(KVF[i])}
+function editKvIdx(i){CUR_KV=KVF[i];editKv()}
+function delKvIdx(i){
+var k=KVF[i];
+if(!confirm('删除 "'+k+'" ？'))return;
+api('POST','/kv/delete',{key:k}).then(function(d){if(d.ok){toast('已删除',true);loadKv()}else toast(d.error,false)}).catch(function(){toast('网络错误',false)})
+}
+
+function viewKv(key){
+CUR_KV=key;
+$('kv-view-title').textContent=key;
+$('kv-view-body').textContent='加载中...';
+openModal('kv-view');
+api('GET','/kv/'+encodeURIComponent(key)).then(function(d){
+if(d.ok)$('kv-view-body').textContent=d.value;
+else $('kv-view-body').textContent='[读取失败]'
+}).catch(function(){$('kv-view-body').textContent='[网络错误]'})
+}
+
+function copyKv(key){
+api('GET','/kv/'+encodeURIComponent(key)).then(function(d){
+if(d.ok){copyText(d.value)}
+}).catch(function(){toast('获取失败',false)})
+}
+
+function copyKvValue(){
+var t=$('kv-view-body').textContent;
+if(t&&t!=='加载中...'&&t!=='[读取失败]'&&t!=='[网络错误]')copyText(t)
+}
+
+function editKv(){
+closeModal('kv-view');
+api('GET','/kv/'+encodeURIComponent(CUR_KV)).then(function(d){
+if(d.ok){
+$('modal-kv-title').textContent='编辑存储';
+$('kv-edit-old').value=CUR_KV;
+$('kv-key').value=CUR_KV;$('kv-key').readOnly=true;
+$('kv-val').value=d.value;
+openModal('kv')
+}
+}).catch(function(){toast('获取失败',false)})
+}
+
+function delKv(){
+if(!confirm('删除 "'+CUR_KV+'" ？'))return;
+api('POST','/kv/delete',{key:CUR_KV}).then(function(d){
+if(d.ok){toast('已删除',true);closeModal('kv-view');loadKv()}else toast(d.error,false)
+}).catch(function(){toast('网络错误',false)})
+}
+
+function openKvAdd(){
+$('modal-kv-title').textContent='添加存储';
+$('kv-edit-old').value='';
+$('kv-key').value='';$('kv-key').readOnly=false;
+$('kv-val').value='';
+openModal('kv')
+}
+
+function saveKv(){
+var key=$('kv-key').value.trim();
+var val=$('kv-val').value;
+if(!key){toast('名称不能为空',false);return}
+if(!val){toast('内容不能为空',false);return}
+api('POST','/kv',{key:key,value:val}).then(function(d){
+if(d.ok){toast('已保存',true);closeModal('kv');loadKv()}else toast(d.error,false)
+}).catch(function(){toast('网络错误',false)})
+}
+
+/* 存储健康度与自愈监控 */
+function loadHealth(){
+api('GET','/health').then(function(d){
+if(!d||!d.ok)return;
+HEALTH_DATA=d;
+var hp=getHealthPct();
+var statusBadge=d.read_only
+?'<span style="color:#e94560;font-weight:bold">⚠️ 降级保护只读模式 (Safe Read-Only)</span>'
+:'<span style="color:#4ecca3;font-weight:bold">🟢 双区健康读写 (Dual-Zone Active)</span>';
+var healBadge=d.heals>0
+?'<span style="color:#ffa500;font-weight:bold">'+d.heals+' 次 (已自动无损自愈)</span>'
+:'<span style="color:#4ecca3">0 次 (镜像完整一致)</span>';
+var used=d.used_entries||(d.creds+d.kvs);
+var free=d.free_entries||(1536-used);
+var totalCap=d.max_creds+d.max_kvs;
+var quotaPct=Math.round((used/totalCap)*100);
+
+/* 更新主页快捷健康度卡片 */
+if($('quick-health-pct'))$('quick-health-pct').innerHTML=hp+'% '+(d.read_only?'受限':'极佳');
+if($('quick-health-bar'))$('quick-health-bar').style.width=hp+'%';
+if($('quick-quota-text'))$('quick-quota-text').textContent='容量: '+used+' / '+totalCap+' 条 ('+quotaPct+'%)';
+if($('quick-heal-text'))$('quick-heal-text').textContent='双区自愈: '+d.heals+' 次 (镜像一致)';
+
+/* 更新顶部状态栏 */
+updateStatus();
+
+/* 更新连接页详细仪表盘 */
+var h=$('health-dashboard');
+if(h){
+h.innerHTML=
+'<div style="margin-bottom:12px">'+
+'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
+'<span><b>综合健康评分：</b></span>'+
+'<span style="color:#4ecca3;font-weight:bold;font-size:1.1em">'+hp+'% '+(d.read_only?'(降级只读)':'(极佳)')+'</span>'+
+'</div>'+
+'<div style="background:#0f1117;border-radius:4px;height:8px;overflow:hidden;border:1px solid #2a2d3a">'+
+'<div style="background:'+(hp>80?'#4ecca3':(hp>50?'#ffa500':'#e94560'))+';height:100%;width:'+hp+'%"></div>'+
+'</div>'+
+'</div>'+
+'<div>状态模式：'+statusBadge+'</div>'+
+'<div>双区镜像完整度：<span style="color:#4ecca3;font-weight:bold">100% 一致</span> ('+healBadge+')</div>'+
+'<div>总容量配额：<b>'+used+'</b> / '+totalCap+' 条 ('+quotaPct+'%)</div>'+
+'<div style="background:#0f1117;border-radius:4px;height:6px;overflow:hidden;margin:4px 0 8px;border:1px solid #2a2d3a">'+
+'<div style="background:#4ecca3;height:100%;width:'+Math.max(1,quotaPct)+'%"></div>'+
+'</div>'+
+'<div>凭证占用：<b>'+d.creds+'</b> / '+d.max_creds+' ('+Math.round((d.creds/d.max_creds)*100)+'%)</div>'+
+'<div>自由存储：<b>'+d.kvs+'</b> / '+d.max_kvs+' ('+Math.round((d.kvs/d.max_kvs)*100)+'%)</div>'+
+'<div>累计写入操作：<b>'+d.writes+'</b> 次 (NVS日志动态磨损均衡，单区寿命>10万次)</div>'+
+'<div style="font-size:0.8em;color:#888;margin-top:6px">📦 7-bit 确定性压缩 + TLV 紧凑二进制布局生效中</div>';
+}
+}).catch(function(){})
+}
+
+/* USB 连接状态 */
+function loadUsb(){
+loadHealth();
+api('GET','/usb').then(function(d){
+var s=$('usb-status');
+if(d.mounted){
+s.innerHTML='✅ <b>已连接</b> — 当前协议: '+(d.active_port==='rndis'?'RNDIS':(d.active_port==='ncm'?'CDC-NCM':d.active_port))+'<br>设备地址: '+esc(d.ip||'192.168.7.1');
+s.style.color='#4ecca3';
+}else{
+s.innerHTML='⚠️ <b>未连接</b> — 请检查 USB 线缆（GPIO19/20，USB-OTG）';
+s.style.color='#ffa500';
+}
+}).catch(function(){})
+}
+
+/* Reset */
+function openReset(){openModal('reset')}
+function doReset(){
+api('POST','/reset',{}).then(function(d){if(d.ok){toast('已重置',true);closeModal('reset');T='';sessionStorage.removeItem('kv_token');showScr('scr-setup')}else toast(d.error,false)}).catch(function(){toast('网络错误',false)})
+}
+
+/* Visibility Change & Init */
+document.addEventListener('visibilitychange', function(){
+if(document.visibilityState==='visible' && T && $('scr-main').style.display==='block'){
+touchActivity();
+loadHealth();
+if($('panel-cred').style.display!=='none')loadCreds();
+else if($('panel-kv').style.display!=='none')loadKv();
+else if($('panel-usb').style.display!=='none')loadUsb();
+}
+});
+
+/* Init */
+e2eeHandshake().then(function(){
+return api('GET','/status');
+}).catch(function(){
+return fetch('/api/status').then(function(r){return r.json()});
+}).then(function(d){
+if(d&&d.setup){
+if(T){
+api('GET','/creds').then(function(res){
+if(res&&res.ok){CREDS=res.creds||[];showScr('scr-main');loadAll()}
+else{T='';sessionStorage.removeItem('kv_token');showScr('scr-login')}
+}).catch(function(){showScr('scr-login')});
+}else{
+showScr('scr-login');
+}
+}else{
+showScr('scr-setup');
+}
+}).catch(function(){showScr('scr-login')})
+</script>
+</body>
+</html>
