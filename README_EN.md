@@ -1,88 +1,93 @@
-# 🔐 KeyVault USB —— ESP32-S3 Hardware-Level Air-Gapped Password & Secret Vault
+# 🔐 KEYVAULT-ESP32 —— Offline Hardware Key & Credential Vault
 
 [English](README_EN.md) | [中文](README.md)
 
-KeyVault is a **completely offline, highly redundant, and zero-trust hardware password & secret vault** powered by the native USB-OTG peripheral of the ESP32-S3 microcontroller.
+**KEYVAULT-ESP32** is an **offline hardware password and credential management device** powered by the native USB-OTG peripheral of the ESP32-S3 microcontroller.
 
-With just a single Type-C cable plugged into any PC, Mac, Linux, or mobile phone, KeyVault automatically establishes a point-to-point high-speed virtual network (USB RNDIS). Users can manage credentials, SSH keys, API tokens, and encrypted notes directly through a sleek, modern responsive Web interface with zero software installation.
+Connected to any PC, Mac, Linux, or mobile device via a standard Type-C cable, the device provides driverless access via USB RNDIS (virtual network) and USB HID keyboard emulation. Users can securely manage credentials, API tokens, SSH keys, and encrypted notes directly in any modern browser without installing proprietary desktop clients or browser extensions, and inject passwords into target forms via physical keystroke emulation.
 
 ---
 
-## 🌟 Key Features & Architectural Highlights
+## 🛠️ Key Features & Security Architecture
 
-### 1. 🗄️ Massive Storage Capacity (1,536 Encrypted Secret Slots)
-- **High-Density Storage**: Supports **1,024 account credentials** + **512 custom key-value pairs** (1,536 secret records in total).
-- **Expanded Partitions**: Dual partitions with **512 KB** each (1 MB total redundancy pool), with ample room for tens of thousands of writes and NVS log-structured wear leveling.
+### 1. 🗄️ Storage Capacity & Partition Planning
+- **Multi-Slot Capacity**: Stores up to **1,024 account credentials** + **512 custom key-value pairs** (1,536 total entries).
+- **Partition Allocation**: Dedicated 512 KB Flash for each zone (1 MB total pool), utilizing log-structured NVS wear-leveling to distribute Flash write cycles evenly.
 
-### 2. 🗜️ Deterministic Two-Tier Lossless Compression (TLV + 7-bit Bit-Packing)
-- **Compact TLV Binary Layout**: Strips verbose JSON field names (`name`, `user`, `pass`, etc.), dramatically shrinking flash footprint.
-- **7-bit ASCII Bitstream Packing**: For alphanumeric characters and common password symbols (ASCII `0x20` to `0x7E`), packs every 8 7-bit characters into 7 continuous physical bytes, cutting storage usage by **12.5%**.
-- **Compress-then-Encrypt (Side-Channel Immune)**: Compression takes place in isolated memory strictly before encryption. Ciphertext length scales linearly and deterministically with character count, rendering CRIME / BREACH style length-leakage side-channel attacks impossible.
-- **Seamless Backward Compatibility**: Automatically recognizes legacy JSON ciphertexts and upgrades them to compact TLV format upon the next write.
+### 2. 🗜️ Compact Encoding & Storage Optimization
+- **TLV Binary Layout**: Compact Type-Length-Value encoding replaces verbose JSON keys, reducing storage overhead.
+- **7-bit ASCII Bit-Packing**: Compresses standard alphanumeric characters and common symbols (ASCII `0x20` to `0x7E`) by packing eight 7-bit characters into seven physical bytes.
+- **Compress-then-Encrypt**: Compression is performed in isolated memory prior to encryption. Deterministic padding mitigates length-leakage risks.
+- **Smooth Format Migration**: Automatically parses legacy records and transparently updates them to the compact layout upon the next write.
 
-### 3. 🛡️ Active-Mirror Dual Zones & Flash Self-Healing Monitor
-- **Active-Mirror Dual Zones**: `vault` (`0xD000`) and `vault2` (`0x8D000`) act as mutual real-time mirrors. Each entry maintains an independent 12-byte Nonce, AES-GCM authentication tag, and CRC32 integrity checksum.
-- **Bit-Flip / Power-Cut Self-Healing**: If a CRC error or decryption anomaly is detected in either partition during reads, KeyVault automatically pulls the valid record from the opposite mirror and executes an **instant, transparent self-healing repair write**.
-- **Flash Endurance & Safe Read-Only Mode**: Continuously tracks cumulative NVS writes, slot utilization, and self-healing occurrences. In the extreme event that both zones experience hardware failures, KeyVault immediately locks into **Safe Read-Only Mode**, preventing write corruption while remaining fully exportable.
+### 3. 🛡️ Dual-Zone Mirroring & Storage Integrity
+- **Active-Mirror Dual Zones**: Two independent NVS partitions (`vault` and `vault2`) mirror each other. Each entry carries an independent Nonce, AES-GCM authentication tag, and CRC32 checksum.
+- **Integrity Check & Self-Healing**: If corrupted data or an invalid checksum is encountered on one partition, the system attempts to restore the valid entry from the opposite mirror and write it back.
+- **Endurance Tracking & Read-Only Fallback**: Monitors write cycles, slot utilization, and repair counts. If an extreme double-partition fault occurs, the device falls back to a **Safe Read-Only Mode** to prevent corruption while permitting backup export.
 
-### 4. 🔒 Zero-Config End-to-End Encryption (HTTP Zero-Config E2EE)
-- **Solves the Browser "Red Screen" Dilemma**: Bypasses the need for importing private Root CAs or enduring HTTPS insecure warnings on private intranet IPs (e.g. `192.168.7.1`).
-- **Pure Native JS Cryptographic Engine**: Built-in pure JavaScript implementation of **RFC 7748 X25519 (ECDH)**, **SHA-256**, and **AES-256-GCM (with full GHASH authentication)** using modern `BigInt`. Operates independently of restricted `window.crypto.subtle` contexts, running out of the box on all browsers.
-- **Ephemeral Key Exchange (PFS)**: On every session initiation, both client and ESP32-S3 generate ephemeral X25519 keypairs to derive a transient 256-bit session key. All request payloads and responses are encrypted and authenticated via on-chip hardware AES-256-GCM. Packet sniffers capture only high-entropy ciphertexts.
+### 4. 🔒 Application-Layer End-to-End Encryption (E2EE)
+- **Eliminating Certificate Warnings**: Avoids browser insecure warnings on local intranet IPs (such as `192.168.7.1`) caused by lack of recognized CA root certificates.
+- **Native JS Cryptographic Suite**: Built with pure JavaScript implementations of **RFC 7748 X25519 (ECDH)**, **SHA-256**, and **AES-256-GCM**, functioning independently of restricted Web Crypto contexts across major browsers.
+- **Forward-Secure Ephemeral Sessions**: Both client and microcontroller generate transient X25519 keypairs upon each session start to derive a 256-bit session key. All payloads are encrypted and authenticated with AES-GCM at the application layer, ensuring sensitive data is not exposed in cleartext over the wire.
 
-### 5. ⌨️ USB HID Driver-Free Safe Typing (Auto-Type / Anti-Clipboard Hijacking)
-- **Composite RNDIS + HID Architecture**: Extends the native network interface by allocating interrupt endpoint `EP3-IN` for standard USB HID keyboard emulation without requiring any host drivers.
-- **Single-Shot Arming State Machine**: Clicking the 【⌨️】 button arms the device for 30 seconds, temporarily loading the decrypted password into volatile RAM with a visible countdown timer.
-- **Physical Key Injection Direct to Target Focus**: Place your cursor into any target input field (lock screens, sudo/SSH terminal, or web login forms) and press the onboard **[BOOT]** button. KeyVault simulates physical keyboard keystrokes to type the password character by character.
-- **Strictly No Enter Key Emitted**: Keystrokes terminate precisely at the end of the password, preventing unintended form submission.
-- **Physical Memory Zeroing & Replay Prevention**: Once keystrokes are emitted, authorization is immediately revoked and the temporary RAM buffer is wiped with `vault_secure_zero`. **Keystrokes bypass the operating system clipboard entirely**, completely neutralizing clipboard-monitoring malware.
+### 5. ⌨️ USB HID Hardware Auto-Typing
+- **Composite Driver-Free Design**: Implements standard USB HID keyboard emulation alongside RNDIS, requiring no host driver installation.
+- **30-Second Single-Shot Arming**: Clicking the keyboard icon arms the device for 30 seconds; the decrypted credential is temporarily staged in volatile RAM with a visible countdown.
+- **Physical Button Trigger**: Focus the target input box (lock screen, terminal, or login form) and press the onboard **BOOT** button. The device simulates hardware keystrokes to type the password character-by-character.
+- **Safety Constraints & Sanitization**:
+  - **No Enter Key**: Stops immediately after the password characters, preventing unintended form submission.
+  - **Bypasses Operating System Clipboard**: Credentials never touch the host clipboard, reducing exposure to clipboard monitoring tools.
+  - **Immediate Memory Zeroing**: Upon typing completion or arming timeout, `vault_secure_zero` wipes the staging buffer in volatile RAM.
 
-### 6. 🛡️ Physical 2FA Button Confirmation & Zero-RF Architecture
-- **Hardware 2FA on Plaintext Password Viewing/Copying**: Viewing or copying credentials requires pressing the onboard **[BOOT]** button within 15 seconds. Requests time out without physical interaction, preventing background botnets or host malware from silently dumping your vault.
-- **Zero RF by Default**: Wi-Fi and Bluetooth radios remain disabled by default, eliminating electromagnetic wireless attack vectors.
-- **Zero Master Password Retention**: Flash stores only cryptographic salts and PBKDF2 verifiers. All derivations occur in volatile RAM and are physically wiped upon verification or power loss.
+### 6. 🔘 Physical 2FA Button Confirmation & Offline Operation
+- **Physical Confirmation on Credential Retrieval**: Viewing or copying credentials triggers a 15-second hardware wait state. **The user must physically press the onboard BOOT button** before cleartext is returned, limiting unauthorized background scraping.
+- **Disabled Radios by Default**: Wi-Fi and Bluetooth radios remain off by default to minimize wireless attack vectors.
+- **No Cleartext Master Password on Disk**: Only salt values and cryptographic hash verifiers are stored in Flash. Verification occurs in RAM and temporary buffers are wiped immediately afterwards.
 
 ---
 
 ## 📐 Hardware & Boot Modes
 
-The ESP32-S3 shares physical pins (`GPIO19: D-`, `GPIO20: D+`) between USB-Serial/JTAG and USB-OTG. KeyVault manages these modes through an automated software state machine:
+The ESP32-S3 multiplexes its physical pins (`GPIO19: D-`, `GPIO20: D+`) between USB-Serial/JTAG and USB-OTG. The firmware manages transitions via an internal state machine:
 
 1. **Default Mode (USB Offline NIC Mode)**:
-   - Enters native USB RNDIS network mode automatically after a 3-second startup buffer. Access via browser: `http://192.168.7.1`.
-2. **Debug / Flashing Protection Mode**:
-   - Short-press the onboard **BOOT** button (`GPIO0`) within the 3-second startup window to stay permanently in USB-Serial/JTAG mode with LED blinking, ready for PlatformIO firmware flashing or serial log monitoring.
-3. **Emergency Wi-Fi Recovery Mode**:
-   - Long-press the onboard **BOOT** button for **10 seconds** at any time to launch the emergency recovery hotspot (SSID: `KeyVault-Recovery`, Password: `vault2024`, IP: `http://192.168.4.1`).
+   - Enters USB virtual network mode automatically after a 3-second boot buffer. Access via browser at: `http://192.168.7.1`.
+2. **Flashing / Debug Mode**:
+   - Short-press the onboard **BOOT** button (`GPIO0`) within the 3-second startup buffer to stay in USB-Serial/JTAG mode with the LED blinking, suitable for firmware flashing or reading serial logs.
+3. **Emergency Wi-Fi Mode**:
+   - Long-press the onboard **BOOT** button for **10 seconds** at runtime to start a temporary recovery hotspot (SSID: `KeyVault-Recovery`, Password: `vault2024`, IP: `http://192.168.4.1`).
 
 ---
 
-## 🚀 Quick Start & One-Click Flashing
+## 🚀 Quick Start & Firmware Flashing
 
-### Method 1: Using the Automated Script (Recommended for Windows)
-Run the automated flashing script in PowerShell from the repository root:
+### Method 1: One-Click Flashing (Recommended)
+Download the prebuilt release package `ESP32-S3-KEYVAULT-vX.X.X-release.zip` from GitHub Releases, extract it, and run `flash.bat`. Enter your serial port (e.g. `COM3`) to flash.
+
+### Method 2: Building from Source (PlatformIO)
 ```powershell
-.\flash.ps1
-```
-The script will automatically detect the download port, upload the partition table and firmware, and verify network connectivity.
-
-> 💡 **Button Instruction**: When prompted, press and hold the board's **[BOOT]** button, tap the **[RESET]** button once, and release **[BOOT]** to enter ROM download mode.
-
-### Method 2: Standard PlatformIO Build & Flash
-```powershell
-# 1. Compile firmware and web assets
+# 1. Generate embedded web assets and compile firmware
+python tools/gen_web_content.py
 pio run
 
-# 2. Flash firmware to ESP32-S3
+# 2. Upload firmware to device
 pio run -t upload
 
-# 3. Monitor live serial logs
+# 3. Open serial monitor
 pio device monitor
 ```
 
+### Method 3: esptool Command Line
+```bash
+esptool.py --chip esp32s3 -p <COM_PORT> -b 921600 write_flash \
+  0x0 flashtool/firmware/bootloader.bin \
+  0x8000 flashtool/firmware/partitions.bin \
+  0x10000 flashtool/firmware/firmware.bin
+```
+
 ---
 
-## 🗃️ Flash Partition Table (4 MB Flash)
+## 🗃️ Flash Partition Layout (4 MB Flash)
 
 ```csv
 # Name,   Type, SubType, Offset,   Size,     Flags
@@ -96,61 +101,68 @@ factory,  app,  factory, 0x110000, 0x1D0000, # 1.81MB Factory Firmware (64KB ali
 
 ## 🌐 REST API Overview
 
-| Method | Path | Description | Authentication |
+| Method | Path | Description | Auth |
 | :--- | :--- | :--- | :--- |
-| **GET** | `/api/status` | Query setup status and USB link state | None |
+| **GET** | `/api/status` | Query initialization and connection state | None |
 | **POST** | `/api/e2ee/handshake` | Ephemeral X25519 session key negotiation | None |
-| **GET** | `/api/health` | Query storage health score, self-heal counts, and write stats | None (touch keepalive with Token) |
-| **GET** | `/api/usb` | Query USB active protocol and assigned IP | None (touch keepalive with Token) |
+| **GET** | `/api/health` | Query dual-zone health and write statistics | None |
+| **GET** | `/api/usb` | Query USB active protocol and assigned IP | None |
 | **POST** | `/api/setup` | Initialize master password (requires physical button 2FA) | None |
 | **POST** | `/api/login` | Unlock vault with master password (requires physical button 2FA) | None |
-| **POST** | `/api/lock` | Emergency lock and immediately purge session keys in RAM | None (safe fallback) |
+| **POST** | `/api/lock` | Lock and immediately clear session keys in RAM | None |
 | **GET** | `/api/creds` | Retrieve credential summary list | `X-Token` |
 | **POST** | `/api/creds` | Add a new credential | `X-Token` |
-| **GET** | `/api/cred/<id>` | Retrieve full credential with plaintext password | `X-Token` |
+| **GET** | `/api/cred/<id>` | Retrieve credential details (requires physical button 2FA) | `X-Token` |
 | **POST** | `/api/cred/update` | Update an existing credential | `X-Token` |
 | **POST** | `/api/cred/delete` | Delete a credential | `X-Token` |
-| **GET** | `/api/kv` | Retrieve list of all custom key names | `X-Token` |
-| **POST** | `/api/kv` | Write or update a custom key-value pair | `X-Token` |
-| **GET** | `/api/kv/<key>` | Retrieve full value of a custom key | `X-Token` |
+| **GET** | `/api/kv` | Retrieve list of custom keys | `X-Token` |
+| **POST** | `/api/kv` | Create or update a custom key-value pair | `X-Token` |
+| **GET** | `/api/kv/<key>` | Retrieve key-value contents (requires physical button 2FA) | `X-Token` |
 | **POST** | `/api/kv/delete` | Delete a custom key | `X-Token` |
-| **POST** | `/api/generate` | High-entropy physical TRNG password generator | None |
-| **POST** | `/api/chpwd` | Change master password with full-database re-encryption | `X-Token` |
+| **POST** | `/api/hid/arm` | Arm single-shot HID auto-typing | `X-Token` |
+| **POST** | `/api/hid/disarm` | Disarm HID state and wipe staging buffer | `X-Token` |
+| **GET** | `/api/hid/status` | Query HID arming status and remaining duration | `X-Token` |
+| **POST** | `/api/generate` | Generate random password using on-chip TRNG | None |
+| **POST** | `/api/chpwd` | Change master password with re-encryption | `X-Token` |
 | **POST** | `/api/export` | Export encrypted AES backup (`.kvbk`) | `X-Token` |
-| **POST** | `/api/import` | Import encrypted backup and restore | `X-Token` |
-| **POST** | `/api/reset` | Factory wipe and erase all secret partitions | `X-Token` |
+| **POST** | `/api/import` | Import and restore encrypted backup | `X-Token` |
+| **POST** | `/api/reset` | Wipe data and perform factory reset | `X-Token` |
 | **POST** | `/api/reboot` | Restart the device | `X-Token` |
 
-> **Note**: All API requests carrying the `X-E2EE-Session` header are transparently encrypted and decrypted using AES-256-GCM.
+> When accompanied by the `X-E2EE-Session` header, API payloads are encrypted and authenticated using AES-256-GCM.
 
 ---
 
 ## 📁 Repository Structure
 
 ```
-ESP32-S3-KEYVAULT/
+KEYVAULT-ESP32/
 ├── partitions.csv            # 512KB dual-zone redundant partition table
 ├── platformio.ini            # PlatformIO build configuration
-├── flash.ps1                 # One-click smart flashing & diagnostics script
+├── flash.ps1                 # Flashing script
 ├── LICENSE                   # MIT License
 ├── README.md                 # Documentation (Chinese)
 ├── README_EN.md              # Documentation (English)
+├── flashtool/                # Precompiled binaries and batch flashing script
+│   ├── flash.bat
+│   └── firmware/
 ├── tools/
-│   └── gen_web_content.py    # Zero-loss Web-to-C code generator
+│   └── gen_web_content.py    # Web-to-C code generator
 └── src/
-    ├── main.c                # HTTP server routes, event loop & E2EE pipeline
-    ├── keyvault.h / c        # 1536 entries, 7-bit compression & dual-zone healing
-    ├── e2ee.h / c            # RFC 7748 X25519 & hardware AES-256-GCM cryptography
-    ├── rndis.h / c           # Native RNDIS USB device class driver
+    ├── main.c                # Main loop, HTTP routing & event coordination
+    ├── keyvault.h / c        # 1,536 entries, 7-bit packing & dual-zone healing
+    ├── e2ee.h / c            # X25519 key exchange & AES-256-GCM encryption
+    ├── usb_hid.h / c         # USB HID keyboard simulation & arming engine
+    ├── rndis.h / c           # RNDIS virtual network device driver
     ├── usb_net.h / c         # Network adapter, DHCP server & IP stack
-    ├── usb_desc.h / c        # USB hardware descriptors & string tables
-    ├── json_util.h / c       # Lightweight JSON parser & escaping utility
+    ├── usb_desc.h / c        # USB composite descriptors & endpoints
+    ├── json_util.h / c       # Lightweight JSON parser
     ├── web_content.h / c     # Embedded Web UI read-only byte arrays
-    └── index.html            # Responsive dark-theme Web UI with pure JS crypto engine
+    └── index.html            # Responsive Web UI (bilingual with pure JS crypto engine)
 ```
 
 ---
 
 ## 📜 License
 
-This project is licensed under the [MIT License](LICENSE). Feel free to use, audit, and contribute!
+This project is licensed under the [MIT License](LICENSE).
