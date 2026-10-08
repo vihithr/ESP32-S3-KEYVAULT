@@ -46,6 +46,41 @@ Connected to any PC, Mac, Linux, or mobile device via a standard Type-C cable, t
 
 ---
 
+## 🛡️ Threat Model & Security Boundaries
+
+Any practical security system must be constructed upon explicit threat assumptions. The primary defensive goal of KEYVAULT-ESP32 is: **To protect against the vast majority of automated network attacks and host malware in everyday computing environments at minimal cost and high portability, rendering bulk vault exfiltration unfeasible.**
+
+### 1. In-Scope Defended Attack Scenarios
+- **Background Malware & Automated Bulk Scraping**:
+  Even if the host machine harbors malicious background processes, any attempt to decrypt and retrieve credentials triggers a hardware-suspended state requiring physical interaction. Automated malware cannot silently dump the vault without physical human presence.
+- **Operating System Clipboard Hijacking & Sniffing**:
+  Using USB HID hardware keystroke emulation (Auto-Type), credentials are typed directly into the active focus window, completely bypassing host OS clipboard mechanisms and neutralizing clipboard-hooking tools.
+- **Cleartext Network Sniffing & Unauthorized Transport Interception**:
+  Application-layer X25519 ephemeral key agreement and AES-256-GCM encryption guarantee that only high-entropy ciphertexts traverse the USB virtual network channel.
+- **Non-Interactive Online Brute-Forcing**:
+  Login authentication also requires physical button confirmation, halting automated online dictionary attacks at the very first attempt.
+
+### 2. Cryptographic Trade-offs: PBKDF2 Iterations vs Password Entropy
+- **Engineering Justification for 30,000 PBKDF2 Iterations**:
+  On a 240 MHz ESP32-S3, 30k iterations take approximately 80–150 ms. This guarantees smooth, responsive unlocking without triggering FreeRTOS task watchdogs (Task WDT).
+- **Linear Delay vs Exponential Search Space**:
+  KDF iteration count provides a **linear work factor**, whereas **the entropy of the master password (length and character pool) provides an exponential barrier**. A 12+ character high-entropy password spans a search space of $\sim 10^{22}$, making offline brute-forcing mathematically infeasible.
+- **Prerequisites for Offline Attacks**:
+  Offline cracking requires extraordinary preconditions: the attacker must physically possess the hardware, possess the tools and skill to desolder or dump Flash contents, and reverse-engineer the private storage layout. Furthermore, when ESP32-S3 hardware **Flash Encryption (AES-XTS) and eFuse blowing** are enabled, raw Flash reads yield only pseudo-random noise.
+
+### 3. Explicit Security Boundaries & Non-Goals (Out of Scope)
+Firmware and microcontrollers cannot defend against attacks that violate their physical and logical trust boundaries:
+- **Fully Compromised Endpoint (Host Rootkits & Keyloggers)**:
+  If the host OS is controlled by a kernel-level rootkit or driver-level keylogger, the hardware prevents dumping the whole database, but cannot prevent the currently typed single credential from being captured by the host OS (a problem addressed by public-key schemes like FIDO2 / Passkey).
+- **Phishing Attacks**:
+  If a user manually injects credentials into a fraudulent website, hardware keystrokes cannot verify the domain name due to the lack of origin-binding in traditional passwords.
+- **Physical Coercion & Social Engineering (OPSEC)**：
+  Should the master password be divulged through coercion (e.g. the classic "\$5 wrench attack") or shoulder surfing, protection belongs to physical operational security (OPSEC).
+- **Lab-Grade Physical & Silicon-Level Attacks**:
+  Techniques such as Focused Ion Beam (FIB), Differential Power Analysis (DPA), and laser fault injection require dedicated Secure Elements (SE) with active physical tamper meshes (e.g. ATECC608A).
+
+---
+
 ## 📐 Hardware & Boot Modes
 
 The ESP32-S3 multiplexes its physical pins (`GPIO19: D-`, `GPIO20: D+`) between USB-Serial/JTAG and USB-OTG. The firmware manages transitions via an internal state machine:
