@@ -96,8 +96,10 @@ ESP32-S3 的 USB-Serial/JTAG 与 USB-OTG 共用物理引脚（`GPIO19: D-`, `GPI
 
 ## 🚀 快速开始与固件烧录
 
-### 方式一：下载 Release 一键烧录（推荐）
-在 GitHub Releases 下载预编译发布包 `ESP32-S3-KEYVAULT-vX.X.X-release.zip`，解压后双击运行 `flash.bat`，输入开发板对应的串口号（如 COM3）即可完成烧录。
+### 方式一：下载 Release 预编译包烧录（推荐）
+在 GitHub Releases 下载预编译发布包 `ESP32-S3-KEYVAULT-vX.X.X-release.zip` 并解压：
+- **🖥️ 图形化烧录工具（推荐）**：双击运行 `flash_gui.bat`，可自动检测系统 Python/Conda/venv 环境、自动扫描 ESP32-S3 串口，提供一键烧录、全片擦除与串口日志监视器。
+- **⌨️ 命令行极简烧录**：双击运行 `flash.bat`，输入串口号（如 COM3）即可一键刷入。
 
 ### 方式二：源码编译构建 (PlatformIO)
 ```powershell
@@ -178,9 +180,14 @@ KEYVAULT-ESP32/
 ├── LICENSE                   # MIT 开源许可证
 ├── README.md                 # 中文技术说明
 ├── README_EN.md              # 英文技术说明
-├── flashtool/                # 预编译固件与一键烧录批处理
-│   ├── flash.bat
-│   └── firmware/
+├── flashtool/                # 预编译固件与图形化烧录工具包
+│   ├── esp32_flash_gui.py    # GUI 烧录器 (串口检测 / 烧录 / 擦除 / 监视器)
+│   ├── esp32_flasher.py      # 烧录底层引擎 (支持 Conda / venv / 系统 Python)
+│   ├── flash_gui.bat         # 双击启动图形界面 (智能环境自适应)
+│   ├── flash.bat             # 命令行极简烧录批处理
+│   ├── create_package.py     # 自动化编译、同步与发布包打包脚本
+│   ├── requirements.txt      # 烧录依赖 (esptool, pyserial)
+│   └── firmware/             # 预编译二进制固件 (bootloader/partitions/firmware)
 ├── tools/
 │   └── gen_web_content.py    # 网页文件转换为 C 源码工具
 └── src/

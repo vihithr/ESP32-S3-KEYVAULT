@@ -13,7 +13,9 @@ diag.ps1
 .codebuddy/
 
 # Archives & Backups
-Boring/
 _archive/
-flashtool/
+# Flashtool artifacts
+flashtool/*.zip
+flashtool/__pycache__/
+flashtool/release_notes*.md
 *.bak

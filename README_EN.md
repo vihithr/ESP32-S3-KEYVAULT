@@ -96,8 +96,10 @@ The ESP32-S3 multiplexes its physical pins (`GPIO19: D-`, `GPIO20: D+`) between 
 
 ## 🚀 Quick Start & Firmware Flashing
 
-### Method 1: One-Click Flashing (Recommended)
-Download the prebuilt release package `ESP32-S3-KEYVAULT-vX.X.X-release.zip` from GitHub Releases, extract it, and run `flash.bat`. Enter your serial port (e.g. `COM3`) to flash.
+### Method 1: Precompiled Release Flashing (Recommended)
+Download and extract `ESP32-S3-KEYVAULT-vX.X.X-release.zip` from GitHub Releases:
+- **🖥️ Graphical Flashing GUI (Recommended)**: Double-click `flash_gui.bat` to launch the GUI flasher. It automatically detects Python/Conda/venv environments, scans serial ports, and provides one-click flashing, full chip erase, and a built-in serial monitor.
+- **⌨️ Command Line Utility**: Double-click `flash.bat` and enter your COM port (e.g. `COM3`) to flash via CLI.
 
 ### Method 2: Building from Source (PlatformIO)
 ```powershell
@@ -178,9 +180,14 @@ KEYVAULT-ESP32/
 ├── LICENSE                   # MIT License
 ├── README.md                 # Documentation (Chinese)
 ├── README_EN.md              # Documentation (English)
-├── flashtool/                # Precompiled binaries and batch flashing script
-│   ├── flash.bat
-│   └── firmware/
+├── flashtool/                # Precompiled binaries & GUI flashing toolkit
+│   ├── esp32_flash_gui.py    # GUI Flasher (port scan / flash / erase / monitor)
+│   ├── esp32_flasher.py      # Flashing engine (auto-detects Conda / venv / Python)
+│   ├── flash_gui.bat         # One-click GUI launcher (auto environment adaptation)
+│   ├── flash.bat             # Minimalist command-line batch script
+│   ├── create_package.py     # Automated build, sync & distribution packaging script
+│   ├── requirements.txt      # Dependencies (esptool, pyserial)
+│   └── firmware/             # Precompiled binaries (bootloader/partitions/firmware)
 ├── tools/
 │   └── gen_web_content.py    # Web-to-C code generator
 └── src/
