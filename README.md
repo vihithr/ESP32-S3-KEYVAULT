@@ -98,8 +98,9 @@ ESP32-S3 的 USB-Serial/JTAG 与 USB-OTG 共用物理引脚（`GPIO19: D-`, `GPI
 
 ### 方式一：下载 Release 预编译包烧录（小白最推荐）
 在 [GitHub Releases](https://github.com/vihithr/ESP32-S3-KEYVAULT/releases) 下载：
-- **⚡ 单文件免安装烧录器（零门槛首选）**：直接下载 `KEYVAULT-Flasher.exe`。**无需安装 Python、无需配置 Conda/venv 环境，内置 esptool 内核与全部固件**，在 Windows 上双击即可直接烧录、擦除或监视串口！
-- **🖥️ 绿色脚本运行包**：下载 `ESP32-S3-KEYVAULT-vX.X.X-release.zip` 并解压，双击 `flash_gui.bat`（智能自适应本地环境）或 `flash.bat`。
+- **⚡ 全功能一键烧录压缩包（最推荐）**：下载 `KEYVAULT-ESP32-v1.1.0-Windows-Flasher.zip`，解压后目录结构已预装配齐，直接双击 `KEYVAULT-Flasher.exe` 即可烧录，**无需单独下载其他文件、无需调整文件结构、无需安装 Python/Conda**！
+- **⚡ 单文件独立烧录器**：亦可单独下载 `KEYVAULT-Flasher.exe`（内嵌固件，单文件即开即用）。
+- **🖥️ 开发者脚本模式**：解压包内亦附带 `flash_gui.bat`（智能自适应本地环境）与 `flash.bat`。
 
 ### 方式二：源码编译构建 (PlatformIO)
 ```powershell

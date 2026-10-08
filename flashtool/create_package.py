@@ -101,43 +101,57 @@ def copy_firmware() -> bool:
 def create_package() -> str:
     """创建便携分发包 ZIP"""
     log("=" * 50)
-    log("正在创建分发 ZIP 压缩包...")
+    log("正在创建全功能一键烧录分发 ZIP 压缩包...")
+
+    exe_path = os.path.join(FLASHTOOL_DIR, "KEYVAULT-Flasher.exe")
+    if not os.path.exists(exe_path):
+        build_script = os.path.join(FLASHTOOL_DIR, "build_exe.py")
+        if os.path.exists(build_script):
+            log("未检测到 KEYVAULT-Flasher.exe，正在自动构建单文件可执行程序...")
+            subprocess.run([sys.executable, build_script], cwd=PROJECT_ROOT)
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     zip_name = f"KEYVAULT-ESP32-v1.1.0-Flashtool_{timestamp}.zip"
     zip_path = os.path.join(FLASHTOOL_DIR, zip_name)
 
-    # 包含的文件
+    # 包含的文件列表
     files_to_pack = [
-        (os.path.join(FLASHTOOL_DIR, "esp32_flash_gui.py"), "esp32_flash_gui.py"),
-        (os.path.join(FLASHTOOL_DIR, "esp32_flasher.py"), "esp32_flasher.py"),
+        (os.path.join(FLASHTOOL_DIR, "KEYVAULT-Flasher.exe"), "KEYVAULT-Flasher.exe"),
+        (os.path.join(FLASHTOOL_DIR, "使用说明.txt"), "使用说明.txt"),
         (os.path.join(FLASHTOOL_DIR, "flash_gui.bat"), "flash_gui.bat"),
         (os.path.join(FLASHTOOL_DIR, "flash.bat"), "flash.bat"),
+        (os.path.join(FLASHTOOL_DIR, "esp32_flash_gui.py"), "esp32_flash_gui.py"),
+        (os.path.join(FLASHTOOL_DIR, "esp32_flasher.py"), "esp32_flasher.py"),
         (os.path.join(FLASHTOOL_DIR, "requirements.txt"), "requirements.txt"),
     ]
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # 打包 firmware 目录
+        # 1. 优先将单文件 EXE 与说明文档放置于根目录
+        for src, arc in files_to_pack:
+            if os.path.exists(src):
+                zf.write(src, arc)
+                sz_k = os.path.getsize(src) / 1024
+                log(f"   添加: {arc} ({sz_k:.1f} KB)")
+
+        # 2. 打包配套 firmware 目录
         for fname in ["bootloader.bin", "partitions.bin", "firmware.bin"]:
             fpath = os.path.join(FIRMWARE_DIR, fname)
             if os.path.exists(fpath):
                 zf.write(fpath, f"firmware/{fname}")
-                log(f"   添加: firmware/{fname}")
+                sz_k = os.path.getsize(fpath) / 1024
+                log(f"   添加: firmware/{fname} ({sz_k:.1f} KB)")
 
-        # 打包工具脚本
-        for src, arc in files_to_pack:
-            if os.path.exists(src):
-                zf.write(src, arc)
-                log(f"   添加: {arc}")
-
-    # 同时创建一个无时间戳的标准 release 包用于发布
+    # 复制为标准的发布包名称
     std_zip = os.path.join(FLASHTOOL_DIR, "ESP32-S3-KEYVAULT-v1.1.0-release.zip")
+    win_zip = os.path.join(FLASHTOOL_DIR, "KEYVAULT-ESP32-v1.1.0-Windows-Flasher.zip")
     shutil.copy2(zip_path, std_zip)
+    shutil.copy2(zip_path, win_zip)
 
     sz_mb = os.path.getsize(zip_path) / (1024 * 1024)
-    log(f"✅ 分发包创建成功！大小: {sz_mb:.2f} MB")
-    log(f"   文件路径: {zip_path}")
-    return zip_path
+    log(f"✅ 全功能分发包创建成功！大小: {sz_mb:.2f} MB")
+    log(f"   发布文件 1: {std_zip}")
+    log(f"   发布文件 2: {win_zip}")
+    return win_zip
 
 
 def main():

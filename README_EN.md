@@ -98,8 +98,9 @@ The ESP32-S3 multiplexes its physical pins (`GPIO19: D-`, `GPIO20: D+`) between 
 
 ### Method 1: Precompiled Release Flashing (Most Recommended)
 Download from [GitHub Releases](https://github.com/vihithr/ESP32-S3-KEYVAULT/releases):
-- **⚡ Standalone Zero-Install Flasher (`KEYVAULT-Flasher.exe`)**: No Python or Conda/venv installation required. Bundles the complete flashing engine and firmware binaries into a single executable. Just double-click to flash, erase, or monitor serial logs on Windows!
-- **🖥️ Script Package**: Download and extract `ESP32-S3-KEYVAULT-vX.X.X-release.zip`, double-click `flash_gui.bat` (automatically detects existing Python environments) or `flash.bat`.
+- **⚡ All-in-One Flasher Package (Most Recommended)**: Download `KEYVAULT-ESP32-v1.1.0-Windows-Flasher.zip`. The folder layout and firmware binaries are pre-arranged. Just extract and double-click `KEYVAULT-Flasher.exe` to flash — **no need to download separate binaries, no folder structure tweaks, and no Python/Conda setup required**!
+- **⚡ Standalone Flasher (`KEYVAULT-Flasher.exe`)**: Can also be downloaded as a standalone executable with embedded firmware.
+- **🖥️ Developer Scripts**: `flash_gui.bat` and `flash.bat` are also included for source/script-based execution.
 
 ### Method 2: Building from Source (PlatformIO)
 ```powershell
